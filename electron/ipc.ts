@@ -708,6 +708,72 @@ const inflightChatControllers = new Map<string, AbortController>();
 /** ユーザーが中断したかタイムアウトかを区別するため、abort reason に使う印 */
 const USER_ABORT_REASON = 'user-aborted';
 
+/**
+ * HTML / プレーンテキストを「AI が読める程度のプレーンテキスト」に圧縮する。
+ *   - <script>/<style>/<noscript>/<svg>/<nav>/<header>/<footer>/<aside>/<form> ブロックごと除去
+ *   - <title> をタイトルとして抽出 (なければ空)
+ *   - 残りの HTML タグを除去
+ *   - HTML エンティティ (&amp; / &lt; / &gt; / &quot; / &#39; / &nbsp;) を復元
+ *   - 空白の連続を折り畳み (改行は最大 2 連続まで)
+ *   - 50KB に切り詰め
+ *
+ * HTML 以外 (text/plain, application/json など) はタイトル無し + 文字数制限のみ適用。
+ */
+function extractReadableText(
+  raw: string,
+  contentType: string,
+): { title: string; content: string } {
+  const MAX_CHARS = 50_000;
+  const isHtml = contentType.includes('html') || /<html[\s>]/i.test(raw);
+  if (!isHtml) {
+    return { title: '', content: raw.slice(0, MAX_CHARS) };
+  }
+  let html = raw;
+  // <title> を抽出 (除去前に取り出す)
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleMatch
+    ? titleMatch[1].replace(/\s+/g, ' ').trim()
+    : '';
+  // 不要ブロックを丸ごと除去
+  html = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<nav[\s\S]*?<\/nav>/gi, ' ')
+    .replace(/<header[\s\S]*?<\/header>/gi, ' ')
+    .replace(/<footer[\s\S]*?<\/footer>/gi, ' ')
+    .replace(/<aside[\s\S]*?<\/aside>/gi, ' ')
+    .replace(/<form[\s\S]*?<\/form>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ');
+  // ブロック要素の終わりは改行扱い
+  html = html.replace(
+    /<\/(p|div|h[1-6]|li|tr|br|article|section|blockquote)[^>]*>/gi,
+    '\n',
+  );
+  html = html.replace(/<br\s*\/?>/gi, '\n');
+  // 残りのタグを除去
+  html = html.replace(/<[^>]+>/g, '');
+  // HTML エンティティ復元
+  html = html
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) =>
+      String.fromCharCode(parseInt(h, 16)),
+    );
+  // 空白圧縮
+  html = html.replace(/[ \t ]+/g, ' ');
+  html = html.replace(/\n[ \t]+/g, '\n');
+  html = html.replace(/\n{3,}/g, '\n\n');
+  html = html.trim();
+  return { title, content: html.slice(0, MAX_CHARS) };
+}
+
 async function chatWithAi(
   input: AiChatInput,
   requestId?: string,
@@ -2020,6 +2086,109 @@ export function registerIpc(): void {
     if (typeof requestId !== 'string' || !requestId) return false;
     return abortChat(requestId);
   });
+
+  /**
+   * 任意の Web URL を取得して本文プレーンテキストに変換する。
+   * AI チャットでユーザー入力に URL が含まれていた場合に、main 側で取得して
+   * AI に「実際の本文」として渡すために使う (AI 自体は URL を読めないため)。
+   *
+   * 制約:
+   *   - http(s) のみ受理 (file:// などはエラー)
+   *   - 15 秒タイムアウト
+   *   - レスポンス本文 5MB 上限
+   *   - HTML は script/style/nav 等を除去して本文テキストに圧縮 (最大 50KB)
+   *   - text/* / application/json はそのまま (タグ除去なし)
+   *   - その他 (画像/バイナリ) はエラー
+   *
+   * 失敗時は { ok: false, error } で返し、呼び出し側はその旨を AI へ伝える。
+   */
+  ipcMain.handle(
+    'web:fetch-url',
+    async (
+      _e,
+      url: string,
+    ): Promise<
+      | { ok: true; url: string; title: string; content: string }
+      | { ok: false; url: string; error: string }
+    > => {
+      if (typeof url !== 'string' || !url.trim()) {
+        return { ok: false, url: String(url), error: 'URL が空です' };
+      }
+      let parsed: URL;
+      try {
+        parsed = new URL(url.trim());
+      } catch {
+        return { ok: false, url, error: 'URL の形式が不正です' };
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return {
+          ok: false,
+          url,
+          error: `${parsed.protocol} はサポートされていません`,
+        };
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15_000);
+      try {
+        const res = await fetch(parsed.toString(), {
+          method: 'GET',
+          redirect: 'follow',
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (compatible; InkNel/0.4) Gecko/20100101 Firefox/119.0',
+            Accept:
+              'text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.5',
+          },
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          return {
+            ok: false,
+            url,
+            error: `HTTP ${res.status} ${res.statusText}`,
+          };
+        }
+        const contentType = (res.headers.get('content-type') || '').toLowerCase();
+        // バイナリは弾く
+        if (
+          contentType &&
+          !contentType.includes('html') &&
+          !contentType.includes('text') &&
+          !contentType.includes('json') &&
+          !contentType.includes('xml')
+        ) {
+          return {
+            ok: false,
+            url,
+            error: `テキスト系コンテンツではありません (${contentType})`,
+          };
+        }
+        // サイズ上限 5MB
+        const buf = await res.arrayBuffer();
+        if (buf.byteLength > 5 * 1024 * 1024) {
+          return {
+            ok: false,
+            url,
+            error: `本文サイズが 5MB を超えています (${buf.byteLength} bytes)`,
+          };
+        }
+        const rawText = new TextDecoder('utf-8').decode(buf);
+        const { title, content } = extractReadableText(rawText, contentType);
+        return { ok: true, url, title, content };
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          return { ok: false, url, error: '取得がタイムアウトしました (15秒)' };
+        }
+        return {
+          ok: false,
+          url,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  );
 
   ipcMain.handle('share:detect-providers', () => {
     return detectProviders();

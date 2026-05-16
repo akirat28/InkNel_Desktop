@@ -178,6 +178,13 @@ const en: Locale = {
     tokenNotSet: 'Set an API token in Settings → AI.',
     notLoaded:
       'AI connector is not loaded. Please restart the app and try again.',
+    confirmCreateNoteTitle: 'Confirm note creation',
+    confirmCreateNoteDesc:
+      'Save the conversation as a note in the location and title below. Proceed?',
+    confirmCreateNoteFolder: 'Folder',
+    confirmCreateNoteNoteTitle: 'Title',
+    confirmCreateNoteOk: 'Create',
+    confirmCreateNoteCancel: 'Cancel',
     saveAsNote: 'Save as note',
     savingNote: 'Saving…',
     saveAsNoteTitle: 'Save the current conversation as a Markdown note in the "AI Notes" folder',
@@ -278,6 +285,16 @@ const en: Locale = {
         'e.g. You are an experienced technical writer. Answer in English with key points as Markdown bullet lists.',
       basePromptDesc:
         'System prompt prepended to every request. Not shown in chat history. Empty = none. Stored separately per provider.',
+      commonSection: 'Common settings',
+      noteFolderLabel: 'Note save folder',
+      noteFolderDesc:
+        'Default top-level folder for notes created via "Save as note" in the AI chat. Editable in the confirmation modal. Shared across providers.',
+      chatFontSizeLabel: 'Chat message font size',
+      chatFontSizeDesc:
+        'Font size (px) of message bubbles in the AI chat. Shared across providers.',
+      inputFontSizeLabel: 'Input box font size',
+      inputFontSizeDesc:
+        'Font size (px) of the AI chat composer input. Shared across providers.',
     },
     codeBlock: {
       displayOptions: 'Display options',

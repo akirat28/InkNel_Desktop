@@ -1,4 +1,10 @@
-import { useMemo, useRef, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import MarkdownIt from 'markdown-it';
 import {
   AI_PROVIDER_OPTIONS,
@@ -151,6 +157,21 @@ function getActiveProviderLabel(settings: AppSettings): string {
   return opt?.label ?? settings.aiProvider;
 }
 
+/**
+ * 文字列から http(s) URL を抽出して重複排除した配列で返す。
+ * 末尾の句読点 (、。, .) や閉じ括弧は URL に含めない。
+ * AI 送信前のテキストから「fetch すべき URL」を拾うために使う。
+ */
+function extractUrls(text: string): string[] {
+  // [^\s<>"'`)\]] で空白や閉じ記号を境界とする。改行/コードフェンスもここで区切る。
+  const re = /https?:\/\/[^\s<>"'`)\]、。]+/g;
+  const matches = text.match(re);
+  if (!matches) return [];
+  // 末尾の記号を取り除いてから重複排除
+  const cleaned = matches.map((u) => u.replace(/[.,;:!?]+$/, ''));
+  return Array.from(new Set(cleaned));
+}
+
 /** AI会話保存用のノートタイトル: ローカル時刻で YYYY-MM-DD HH:mm:ss */
 function formatNowForNoteTitle(): string {
   const d = new Date();
@@ -208,6 +229,19 @@ export default function AiChatPanel({
   const [busy, setBusy] = useState(false);
   // ノート化処理中フラグ（多重送信を防止）
   const [savingNote, setSavingNote] = useState(false);
+  // メッセージリスト DOM への参照。新着メッセージや AI ストリーミング更新時に
+  // 自動で最下部までスクロールするのに使う。
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  // ユーザーが手動でスクロールアップして読み返している間は自動スクロールを抑止する。
+  // 初期値 true (=最下部追従モード)。スクロール位置が最下部から 80px 以上離れたら
+  // false に切り替わり、再び最下部付近に戻したら true に戻る。
+  const isPinnedToBottomRef = useRef(true);
+  // ノート化の確認モーダル状態。null なら非表示。
+  // フォルダ名・タイトルは編集可能で、ユーザーが確認/修正してから「作成」を押す。
+  const [pendingNote, setPendingNote] = useState<{
+    title: string;
+    folder: string;
+  } | null>(null);
   // 送信中の AI 要求 ID。停止ボタンから ai.abort(reqId) で中断するために保持。
   const inflightRequestIdRef = useRef<string | null>(null);
 
@@ -392,6 +426,57 @@ export default function AiChatPanel({
           body: await window.api.notes.readBody(note.id),
         })),
       );
+      // ===== ユーザー入力中の URL を実際に取得して AI に渡す =====
+      // AI 自体は URL を読めないため、main 側で fetch して本文を取り出し、
+      // 「添付された URL の本文」として user メッセージに同梱する。
+      // これがないと AI は URL 文字列だけ見て、ノート本文や履歴を頼りに
+      // 推測してしまい「指定 URL ではなく前回内容を要約する」現象が起きる。
+      const detectedUrls = extractUrls(text);
+      let augmentedLastUserContent = text;
+      if (detectedUrls.length > 0) {
+        // 取得中は placeholder を進捗表示に切り替えてユーザーへフィードバック。
+        // ai:chat-chunk が来始めたら rawAccum に上書きされる想定だが、
+        // チャンクが来る前にも何か見えている方が UX としてよい。
+        setMessages((current) =>
+          current.map((m) =>
+            m.id === placeholderId
+              ? {
+                  ...m,
+                  text: `📡 URL を取得中… (${detectedUrls.length} 件)`,
+                }
+              : m,
+          ),
+        );
+        const fetched = await Promise.all(
+          detectedUrls.map((u) => window.api.web.fetchUrl(u)),
+        );
+        // チャンクで上書きされるよう一旦空に戻す
+        setMessages((current) =>
+          current.map((m) =>
+            m.id === placeholderId ? { ...m, text: '' } : m,
+          ),
+        );
+        const sections: string[] = [text, ''];
+        sections.push('=== 添付された URL の本文 (main process で取得済み) ===');
+        for (const r of fetched) {
+          sections.push('');
+          sections.push(`--- ${r.url} ---`);
+          if (r.ok) {
+            if (r.title) sections.push(`タイトル: ${r.title}`);
+            sections.push('');
+            sections.push(r.content);
+          } else {
+            sections.push(`(取得失敗: ${r.error})`);
+          }
+        }
+        sections.push('');
+        sections.push('=== URL 本文ここまで ===');
+        sections.push('');
+        sections.push(
+          '※ 上記「添付された URL の本文」は実際にネット越しに取得した最新の内容です。回答は必ずこの本文を根拠としてください。以前の会話や開いているノートの内容に引きずられず、上記の URL の内容を優先して要約・回答してください。',
+        );
+        augmentedLastUserContent = sections.join('\n');
+      }
       // basePrompt は空文字なら送らない（main 側でも trim チェックしている）
       const basePrompt = aiActive.basePrompt.trim();
       const allowNoteActions = chatMode === 'edit';
@@ -401,9 +486,12 @@ export default function AiChatPanel({
           token: aiActive.token,
           endpoint: aiActive.endpoint,
           model: aiActive.model,
-          messages: nextMessages.map((m) => ({
+          messages: nextMessages.map((m, i) => ({
             role: m.role,
-            content: m.text,
+            content:
+              i === nextMessages.length - 1
+                ? augmentedLastUserContent
+                : m.text,
           })),
           ...(basePrompt ? { basePrompt } : {}),
           noteContext: {
@@ -508,10 +596,40 @@ export default function AiChatPanel({
   };
 
   /**
-   * 現在のチャット履歴を Markdown 化して新規ノートとして保存する。
-   * ノート名は「AIノート」フォルダ配下に「現在日時」というタイトルで作成。
+   * メッセージリストの最下部への自動スクロール。
+   * messages 配列が更新されるたび (新規メッセージ追加・ストリーミング delta 追記
+   * のどちらでも setMessages 経由で配列参照が変わるため) に発火する。
+   * ユーザーが過去のやり取りを読み返すために上方向にスクロールしている間は
+   * isPinnedToBottomRef が false になっているので押し戻さない。
    */
-  const handleSaveAsNote = async () => {
+  useEffect(() => {
+    if (!isPinnedToBottomRef.current) return;
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages]);
+
+  /**
+   * メッセージリストのスクロールイベントハンドラ。
+   * 最下部付近 (80px 以内) にいるかどうかで isPinnedToBottomRef を切り替え、
+   * 「ユーザーが読み返し中なら自動スクロールしない / 戻ってきたらまた追従する」
+   * を実現する。
+   */
+  const handleMessagesScroll = () => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight;
+    isPinnedToBottomRef.current = distanceFromBottom < 80;
+  };
+
+  /**
+   * 「ノートに変換」ボタンの初動。保存場所とタイトルをユーザーに確認させるため、
+   * 実際の作成は handleConfirmCreateNote 側で実行する。
+   * ここでは事前バリデーション (会話の有無 / API の存在) と、確認モーダル
+   * (pendingNote) の初期値セットだけ行う。
+   */
+  const handleSaveAsNote = () => {
     if (savingNote) return;
     if (messages.length === 0) {
       setMessages((prev) => [
@@ -536,6 +654,32 @@ export default function AiChatPanel({
       ]);
       return;
     }
+    // 確認モーダルを表示。タイトル/フォルダは編集可能なので、必要に応じて変更可能。
+    // フォルダ名は設定 (AI > 共通設定 > ノート保存先フォルダ) を優先し、空なら 'AIノート'。
+    setPendingNote({
+      title: formatNowForNoteTitle(),
+      folder: settings.aiNoteFolder?.trim() || 'AIノート',
+    });
+  };
+
+  /** 確認モーダルでキャンセルした時の処理。 */
+  const handleCancelCreateNote = () => {
+    setPendingNote(null);
+  };
+
+  /**
+   * 確認モーダルで「作成」を押した時の本処理。
+   * pendingNote のタイトル/フォルダで実際にノートを生成する。
+   * 空タイトル/空フォルダは既定値にフォールバック。
+   */
+  const handleConfirmCreateNote = async () => {
+    if (savingNote || !pendingNote) return;
+    const title = pendingNote.title.trim() || formatNowForNoteTitle();
+    const folder =
+      pendingNote.folder.trim() ||
+      settings.aiNoteFolder?.trim() ||
+      'AIノート';
+    setPendingNote(null);
     setSavingNote(true);
     try {
       const body = buildMarkdownFromMessages(
@@ -544,8 +688,8 @@ export default function AiChatPanel({
         noteTitle,
       );
       const created = await window.api.notes.create({
-        title: formatNowForNoteTitle(),
-        folder: 'AIノート',
+        title,
+        folder,
         body,
       });
       onNoteCreated?.(created);
@@ -554,7 +698,7 @@ export default function AiChatPanel({
         {
           id: `n-${Date.now()}`,
           role: 'assistant',
-          text: `**ノートを作成しました**: \`AIノート/${created.title}\``,
+          text: `**ノートを作成しました**: \`${folder}/${created.title}\``,
         },
       ]);
     } catch (err) {
@@ -597,10 +741,16 @@ export default function AiChatPanel({
       aria-label={t.aiChat.title}
       aria-hidden={collapsed}
       // リサイズドラッグ中は width のトランジションを切ってカーソルへ即時追従させる
-      style={{
-        width: collapsed ? 0 : width,
-        transition: resizing ? 'none' : undefined,
-      }}
+      // CSS 変数で子要素 (.ai-chat__message / .ai-chat__input) のフォントサイズを
+      // 設定 (設定 > AI > 共通設定) から動的に上書きする。
+      style={
+        {
+          width: collapsed ? 0 : width,
+          transition: resizing ? 'none' : undefined,
+          '--ai-chat-msg-font-size': `${settings.aiChatFontSize}px`,
+          '--ai-chat-input-font-size': `${settings.aiInputFontSize}px`,
+        } as CSSProperties
+      }
     >
       {/* 折りたたみ中もコンテンツが横方向に潰れて再フローしないよう、
           内側コンテナで実幅を保持する（サイドバーと同じパターン）。 */}
@@ -610,8 +760,8 @@ export default function AiChatPanel({
         <button
           type="button"
           className="ai-chat__save-note"
-          onClick={() => void handleSaveAsNote()}
-          disabled={savingNote || messages.length === 0}
+          onClick={handleSaveAsNote}
+          disabled={savingNote || messages.length === 0 || pendingNote !== null}
           title={t.aiChat.saveAsNoteTitle}
           aria-label={t.aiChat.saveAsNoteAria}
         >
@@ -637,7 +787,11 @@ export default function AiChatPanel({
           ×
         </button>
       </header>
-      <div className="ai-chat__messages">
+      <div
+        className="ai-chat__messages"
+        ref={messagesContainerRef}
+        onScroll={handleMessagesScroll}
+      >
         {messages.length === 0 ? (
           <p className="ai-chat__empty">{t.aiChat.emptyState}</p>
         ) : (
@@ -765,6 +919,80 @@ export default function AiChatPanel({
         </div>
       </div>
       </div>{/* ai-chat__inner */}
+      {pendingNote && (
+        <div
+          className="modal__backdrop"
+          onClick={handleCancelCreateNote}
+          role="presentation"
+        >
+          <div
+            className="modal modal--ai-note-confirm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ai-note-confirm-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal--ai-note-confirm__inner">
+              <h3
+                id="ai-note-confirm-title"
+                className="modal--ai-note-confirm__title"
+              >
+                {t.aiChat.confirmCreateNoteTitle}
+              </h3>
+              <p className="modal--ai-note-confirm__desc">
+                {t.aiChat.confirmCreateNoteDesc}
+              </p>
+              <label className="modal--ai-note-confirm__row">
+                <span className="modal--ai-note-confirm__label">
+                  {t.aiChat.confirmCreateNoteFolder}
+                </span>
+                <input
+                  type="text"
+                  className="modal--ai-note-confirm__input"
+                  value={pendingNote.folder}
+                  onChange={(e) =>
+                    setPendingNote((prev) =>
+                      prev ? { ...prev, folder: e.target.value } : prev,
+                    )
+                  }
+                  autoFocus
+                />
+              </label>
+              <label className="modal--ai-note-confirm__row">
+                <span className="modal--ai-note-confirm__label">
+                  {t.aiChat.confirmCreateNoteNoteTitle}
+                </span>
+                <input
+                  type="text"
+                  className="modal--ai-note-confirm__input"
+                  value={pendingNote.title}
+                  onChange={(e) =>
+                    setPendingNote((prev) =>
+                      prev ? { ...prev, title: e.target.value } : prev,
+                    )
+                  }
+                />
+              </label>
+              <div className="modal--ai-note-confirm__actions">
+                <button
+                  type="button"
+                  className="modal--ai-note-confirm__btn modal--ai-note-confirm__btn--secondary"
+                  onClick={handleCancelCreateNote}
+                >
+                  {t.aiChat.confirmCreateNoteCancel}
+                </button>
+                <button
+                  type="button"
+                  className="modal--ai-note-confirm__btn modal--ai-note-confirm__btn--primary"
+                  onClick={() => void handleConfirmCreateNote()}
+                >
+                  {t.aiChat.confirmCreateNoteOk}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

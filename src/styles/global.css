@@ -2404,7 +2404,9 @@ body,
   max-width: 92%;
   padding: 8px 10px;
   border-radius: 8px;
-  font-size: 12px;
+  /* AiChatPanel ルートが --ai-chat-msg-font-size を inline で渡してくる。
+     未指定なら従来の 12px を採用。設定 (設定 > AI > 共通設定) で変更可能。 */
+  font-size: var(--ai-chat-msg-font-size, 12px);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
@@ -2699,7 +2701,9 @@ body,
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 10px;
-  font-size: 12px;
+  /* AiChatPanel ルートが --ai-chat-input-font-size を inline で渡してくる。
+     未指定なら従来の 12px を採用。設定 (設定 > AI > 共通設定) で変更可能。 */
+  font-size: var(--ai-chat-input-font-size, 12px);
   font-family: inherit;
   line-height: 1.5;
   outline: none;
@@ -3804,6 +3808,91 @@ body,
   box-shadow: 0 12px 32px var(--shadow);
   display: flex;
   flex-direction: column;
+}
+
+/* ----- AI 会話 → ノート変換 確認モーダル -----
+   「ノートに変換」ボタン押下時に保存先/タイトルを確認させるためのダイアログ。
+   タイトル/フォルダはユーザーが編集可能 (デフォルト: AIノート + 現在時刻)。 */
+.modal--ai-note-confirm {
+  min-width: 420px;
+  max-width: 520px;
+}
+.modal--ai-note-confirm__inner {
+  padding: 20px 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.modal--ai-note-confirm__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--fg);
+}
+.modal--ai-note-confirm__desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fg-muted);
+}
+.modal--ai-note-confirm__row {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+.modal--ai-note-confirm__label {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.modal--ai-note-confirm__input {
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  background: var(--bg-elevated, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.modal--ai-note-confirm__input:focus {
+  border-color: var(--accent);
+}
+.modal--ai-note-confirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.modal--ai-note-confirm__btn {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.modal--ai-note-confirm__btn--secondary {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+.modal--ai-note-confirm__btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--fg-muted);
+}
+[data-theme='light'] .modal--ai-note-confirm__btn--secondary:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+.modal--ai-note-confirm__btn--primary {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+}
+.modal--ai-note-confirm__btn--primary:hover {
+  filter: brightness(1.08);
 }
 
 /* ----- ノート削除確認モーダル ----- */

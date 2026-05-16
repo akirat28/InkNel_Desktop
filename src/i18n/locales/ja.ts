@@ -182,6 +182,13 @@ const ja: Locale = {
     savingNote: '変換中…',
     saveAsNoteTitle: '現在の会話を Markdown ノートとして「AIノート」フォルダに保存',
     saveAsNoteAria: '現在の会話をノートに変換',
+    confirmCreateNoteTitle: 'ノート作成の確認',
+    confirmCreateNoteDesc:
+      '以下の場所とタイトルで会話をノートとして保存します。よろしいですか?',
+    confirmCreateNoteFolder: 'フォルダ',
+    confirmCreateNoteNoteTitle: 'タイトル',
+    confirmCreateNoteOk: '作成',
+    confirmCreateNoteCancel: 'キャンセル',
     clearChat: 'チャットをクリア',
     clearChatTitle: '現在のチャット履歴をすべて削除',
     closeAria: 'AIチャットを閉じる',
@@ -280,6 +287,16 @@ const ja: Locale = {
         '例: あなたは熟練したテクニカルライターです。回答は日本語で、Markdown で要点を箇条書きにしてください。',
       basePromptDesc:
         'AI に毎回の送信で最初に渡す役割設定（system プロンプト）です。チャット履歴には表示されません。空欄の場合は送信しません。プロバイダごとに独立して保存されます。',
+      commonSection: '共通設定',
+      noteFolderLabel: 'ノート保存先フォルダ',
+      noteFolderDesc:
+        'AI チャットの「ノートに変換」で作成されるノートの既定保存先フォルダ名（最上位ディレクトリ）。確認モーダルで変更可能。プロバイダ共通設定。',
+      chatFontSizeLabel: 'チャット表示テキストサイズ',
+      chatFontSizeDesc:
+        'AI チャットのメッセージ表示フォントサイズ (px)。プロバイダ共通設定。',
+      inputFontSizeLabel: '入力欄テキストサイズ',
+      inputFontSizeDesc:
+        'AI チャットの入力テキストボックスのフォントサイズ (px)。プロバイダ共通設定。',
     },
     codeBlock: {
       displayOptions: '表示オプション',

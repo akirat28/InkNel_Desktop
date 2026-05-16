@@ -300,6 +300,19 @@ export interface AiApi {
   ): () => void;
 }
 
+/**
+ * Web ページの取得 API。AI チャットで URL を渡されたとき、main 側で実際に
+ * fetch して本文を取り出すために使う (AI 自体は URL を読めないため)。
+ */
+export interface WebApi {
+  fetchUrl(
+    url: string,
+  ): Promise<
+    | { ok: true; url: string; title: string; content: string }
+    | { ok: false; url: string; error: string }
+  >;
+}
+
 export interface PluginCatalogEntry {
   /** プラグイン ID */
   id: string;
@@ -446,6 +459,7 @@ export interface InkNelApi {
   media: MediaApi;
   template: TemplateApi;
   ai: AiApi;
+  web: WebApi;
   share: ShareApi;
   plugins: PluginsApi;
 }

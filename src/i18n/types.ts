@@ -201,6 +201,12 @@ export interface Locale {
     savingNote: string;
     saveAsNoteTitle: string;
     saveAsNoteAria: string;
+    confirmCreateNoteTitle: string;
+    confirmCreateNoteDesc: string;
+    confirmCreateNoteFolder: string;
+    confirmCreateNoteNoteTitle: string;
+    confirmCreateNoteOk: string;
+    confirmCreateNoteCancel: string;
     clearChat: string;
     clearChatTitle: string;
     closeAria: string;
@@ -283,6 +289,13 @@ export interface Locale {
       basePromptLabel: string;
       basePromptPlaceholder: string;
       basePromptDesc: string;
+      commonSection: string;
+      noteFolderLabel: string;
+      noteFolderDesc: string;
+      chatFontSizeLabel: string;
+      chatFontSizeDesc: string;
+      inputFontSizeLabel: string;
+      inputFontSizeDesc: string;
     };
     codeBlock: {
       displayOptions: string;

@@ -587,6 +587,95 @@ function AiPanel({ settings, onChange }: PanelProps) {
           </p>
         </div>
       </div>
+
+      {/* ----- 共通設定 (全プロバイダ共通) -----
+          AI チャットから「ノートに変換」した時の既定保存先フォルダ名。
+          確認モーダルでユーザーが上書きも可能。 */}
+      <div className="ai-panel__subhead">
+        <h4 className="ai-panel__subhead-title">
+          {t.settings.ai.commonSection}
+        </h4>
+      </div>
+
+      <div className="ai-panel__group">
+        <div className="ai-panel__row">
+          <div className="ai-panel__row-label">
+            <span className="ai-panel__row-icon">
+              <FolderIcon />
+            </span>
+            {t.settings.ai.noteFolderLabel}
+          </div>
+          <input
+            id="prefs-ai-note-folder"
+            type="text"
+            className="ai-panel__row-input"
+            value={settings.aiNoteFolder}
+            placeholder="AIノート"
+            onChange={(e) => onChange('aiNoteFolder', e.target.value)}
+            onBlur={(e) => {
+              // 空欄のまま blur したら既定値に戻す
+              if (!e.target.value.trim()) onChange('aiNoteFolder', 'AIノート');
+            }}
+          />
+          <p className="ai-panel__row-desc">
+            {t.settings.ai.noteFolderDesc}
+          </p>
+        </div>
+
+        {/* チャット表示テキストサイズ (メッセージ吹き出し) */}
+        <div className="ai-panel__row">
+          <div className="ai-panel__row-label">
+            <span className="ai-panel__row-icon">
+              <FontIcon />
+            </span>
+            {t.settings.ai.chatFontSizeLabel}
+          </div>
+          <select
+            id="prefs-ai-chat-font-size"
+            className="ai-panel__row-select"
+            value={String(settings.aiChatFontSize)}
+            onChange={(e) =>
+              onChange('aiChatFontSize', Number(e.target.value) as FontSize)
+            }
+          >
+            {FONT_SIZE_OPTIONS.map((s) => (
+              <option key={s} value={String(s)}>
+                {s} {t.settings.general.fontSizeSuffix}
+              </option>
+            ))}
+          </select>
+          <p className="ai-panel__row-desc">
+            {t.settings.ai.chatFontSizeDesc}
+          </p>
+        </div>
+
+        {/* 入力テキストボックスのフォントサイズ */}
+        <div className="ai-panel__row">
+          <div className="ai-panel__row-label">
+            <span className="ai-panel__row-icon">
+              <FontIcon />
+            </span>
+            {t.settings.ai.inputFontSizeLabel}
+          </div>
+          <select
+            id="prefs-ai-input-font-size"
+            className="ai-panel__row-select"
+            value={String(settings.aiInputFontSize)}
+            onChange={(e) =>
+              onChange('aiInputFontSize', Number(e.target.value) as FontSize)
+            }
+          >
+            {FONT_SIZE_OPTIONS.map((s) => (
+              <option key={s} value={String(s)}>
+                {s} {t.settings.general.fontSizeSuffix}
+              </option>
+            ))}
+          </select>
+          <p className="ai-panel__row-desc">
+            {t.settings.ai.inputFontSizeDesc}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -664,6 +753,27 @@ function CpuIcon() {
       <rect x="6" y="6" width="12" height="12" rx="2" />
       <rect x="9" y="9" width="6" height="6" />
       <path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" />
+    </svg>
+  );
+}
+
+/** フォントサイズ設定用のアイコン。「A」を 2 サイズ並べたミニアイコン */
+function FontIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      stroke="none"
+      aria-hidden="true"
+    >
+      <text x="3" y="18" fontSize="14" fontFamily="sans-serif" fontWeight="700">
+        A
+      </text>
+      <text x="14" y="18" fontSize="9" fontFamily="sans-serif" fontWeight="700">
+        A
+      </text>
     </svg>
   );
 }

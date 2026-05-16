@@ -254,6 +254,16 @@ export interface AppSettings {
    */
   aiProviderSettings: Record<AiProvider, AiProviderSettings>;
   /**
+   * AI チャットから「ノートに変換」した時の既定保存先フォルダ名 (最上位)。
+   * 確認モーダルでユーザーが上書き可能。空欄なら 'AIノート' を使う。
+   * プロバイダ共通設定。
+   */
+  aiNoteFolder: string;
+  /** AI チャットのメッセージ表示フォントサイズ (px)。プロバイダ共通設定。 */
+  aiChatFontSize: FontSize;
+  /** AI チャットの入力欄 (composer textarea) フォントサイズ (px)。プロバイダ共通設定。 */
+  aiInputFontSize: FontSize;
+  /**
    * 有効化されているプラグイン ID の配列。
    * `src/plugins/<id>.ts` が存在し、かつここに含まれていれば有効。
    * 配列に未知の ID が混じっていても registry 側で無視される。
@@ -313,6 +323,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   templateFolder: 'template',
   aiProvider: 'general',
   aiProviderSettings: DEFAULT_AI_PROVIDER_SETTINGS,
+  aiNoteFolder: 'AIノート',
+  aiChatFontSize: 12,
+  aiInputFontSize: 12,
   enabledPlugins: [],
   removedPlugins: [],
   importedPlugins: [],
@@ -417,6 +430,18 @@ export function parseSettings(raw: Record<string, string>): AppSettings {
         DEFAULT_SETTINGS.aiProvider,
       ),
     }),
+    aiNoteFolder:
+      typeof raw['ai.noteFolder'] === 'string' && raw['ai.noteFolder'].trim()
+        ? raw['ai.noteFolder'].trim()
+        : DEFAULT_SETTINGS.aiNoteFolder,
+    aiChatFontSize: parseFontSize(
+      raw['ai.chatFontSize'],
+      DEFAULT_SETTINGS.aiChatFontSize,
+    ),
+    aiInputFontSize: parseFontSize(
+      raw['ai.inputFontSize'],
+      DEFAULT_SETTINGS.aiInputFontSize,
+    ),
     enabledPlugins: parseEnabledPlugins(
       raw['plugin.enabled'],
       DEFAULT_SETTINGS.enabledPlugins,
@@ -501,6 +526,12 @@ export function settingToRecord<K extends keyof AppSettings>(
       return { key: 'ai.provider', value: String(value) };
     case 'aiProviderSettings':
       return { key: 'ai.providerSettings', value: JSON.stringify(value) };
+    case 'aiNoteFolder':
+      return { key: 'ai.noteFolder', value: String(value) };
+    case 'aiChatFontSize':
+      return { key: 'ai.chatFontSize', value: String(value) };
+    case 'aiInputFontSize':
+      return { key: 'ai.inputFontSize', value: String(value) };
     case 'enabledPlugins':
       return { key: 'plugin.enabled', value: JSON.stringify(value) };
     case 'removedPlugins':

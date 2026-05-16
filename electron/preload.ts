@@ -384,6 +384,22 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
 
+  web: {
+    /**
+     * 任意の http(s) URL を取得して本文プレーンテキストに変換する。
+     * AI チャットでユーザー入力に URL が含まれていた場合、送信前にこれで
+     * 内容を取得し、AI に「実際の本文」として渡すために使う。
+     */
+    fetchUrl(
+      url: string,
+    ): Promise<
+      | { ok: true; url: string; title: string; content: string }
+      | { ok: false; url: string; error: string }
+    > {
+      return ipcRenderer.invoke('web:fetch-url', url);
+    },
+  },
+
   share: {
     /** iCloud / Dropbox / Google Drive の利用可否を返す */
     detectProviders(): Promise<
