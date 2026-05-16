@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="web-site/icon.png" alt="InkNel" width="120" height="120" />
+<img src="docs/Icon.png" alt="InkNel" width="120" height="120" />
 
 # InkNel
 
