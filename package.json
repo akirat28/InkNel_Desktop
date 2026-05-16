@@ -20,6 +20,7 @@
     "dist:mac:universal": "npm run build && electron-builder --mac --arm64 --x64",
     "dist:win": "npm run build && electron-builder --win --x64",
     "dist:win:zip": "npm run build && electron-builder --win --x64 -c.win.target=zip",
+    "dist:linux": "npm run build && electron-builder --linux --x64",
     "test": "node scripts/run-tests.cjs"
   },
   "build": {
@@ -69,6 +70,14 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office",
+      "icon": "build/icon.png",
+      "synopsis": "Markdown memo app for desktop"
     },
     "dmg": {
       "title": "${productName} ${version}",
