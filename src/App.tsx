@@ -754,6 +754,18 @@ export default function App() {
         setSettings(parsed);
         setSidebarWidth(parsed.sidebarWidth);
         setAiChatWidth(parseAiChatWidth(rawSettings[AI_CHAT_WIDTH_SETTING_KEY]));
+        // 設定ウィンドウは別レンダラープロセスで動くため、runtimePlugins が
+        // 空の状態で起動する。DL 版プラグインの SettingsComponent を表示するには
+        // ここでもインポート済みプラグインをランタイムに載せる必要がある。
+        // 失敗してもウィンドウ起動自体は継続。
+        try {
+          await loadImportedPlugins(parsed.importedPlugins);
+        } catch (err) {
+          console.warn(
+            '[plugins] import on prefs window startup failed:',
+            err,
+          );
+        }
         return;
       }
       const [list, folderList, rawSettings] = await Promise.all([

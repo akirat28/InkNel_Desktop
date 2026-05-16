@@ -2542,22 +2542,6 @@ function PluginsPanel({ settings, onChange }: PanelProps) {
               !!PluginSettingsUI &&
               p.state === 'imported' &&
               enabledSet.has(p.id);
-            // 診断用ログ: 各プラグインカードの描画判定を出力
-            // 設定 UI が出ない場合に「どの条件で落ちているか」を切り分ける目的。
-            // 動作確認後に削除予定。
-            console.log('[plugin-card]', {
-              id: p.id,
-              state: p.state,
-              enabled: enabledSet.has(p.id),
-              hasModuleRef: !!moduleRef,
-              hasSettingsComponent: !!PluginSettingsUI,
-              fromBundled: !!bundledById.get(p.id),
-              fromRuntime: !!runtimeById.get(p.id),
-              runtimeMapSize: runtimeById.size,
-              importedPluginsCount: settings.importedPlugins.length,
-              enabledPluginsCount: settings.enabledPlugins.length,
-              show: showPluginSettings,
-            });
             return (
               <article className="plugins-panel__card" key={p.id}>
                 <div className="plugins-panel__card-icon">
