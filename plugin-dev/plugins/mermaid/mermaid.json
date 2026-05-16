@@ -1,0 +1,10 @@
+{
+  "id": "mermaid",
+  "name": "Mermaid",
+  "version": "1.0.3",
+  "description": "```mermaid コードブロックを、シーケンス図 / フローチャート / ER 図 / ガントチャート等として描画します。Mermaid 本体は初回プレビュー時に CDN から動的に読み込みます。",
+  "author": "InkNel",
+  "homepage": "https://inknel.ary-ap.com/plugins/mermaid",
+  "entry": "mermaid/mermaid.js",
+  "files": ["mermaid/mermaid.js"]
+}

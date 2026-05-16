@@ -1,0 +1,124 @@
+{
+  "name": "inknel-elec",
+  "productName": "InkNel",
+  "version": "0.3.8",
+  "private": true,
+  "type": "module",
+  "description": "Markdown memo app for desktop (Electron) with future cloud sync",
+  "main": "out/main/index.js",
+  "scripts": {
+    "postinstall": "node scripts/patch-electron-name.cjs && electron-rebuild -f -w better-sqlite3",
+    "predev": "node scripts/patch-electron-name.cjs",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "pack:mac": "npm run build && electron-builder --mac --dir",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:mac:arm64": "npm run build && electron-builder --mac --arm64",
+    "dist:mac:x64": "npm run build && electron-builder --mac --x64",
+    "dist:mac:universal": "npm run build && electron-builder --mac --arm64 --x64",
+    "dist:win": "npm run build && electron-builder --win --x64",
+    "dist:win:zip": "npm run build && electron-builder --win --x64 -c.win.target=zip",
+    "test": "node scripts/run-tests.cjs"
+  },
+  "build": {
+    "appId": "com.inknel.app",
+    "productName": "InkNel",
+    "copyright": "Copyright © 2026 InkNel",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "afterPack": "scripts/codesign-adhoc.cjs",
+    "afterSign": "scripts/notarize.cjs",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "identity": "akira Tanaka (F3P687R953)",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "notarize": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "InkNel は AirPrint プリンタを検索するためにローカルネットワークへアクセスします。",
+        "LSApplicationCategoryType": "public.app-category.productivity"
+      }
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
+    },
+    "dmg": {
+      "title": "${productName} ${version}",
+      "window": {
+        "width": 540,
+        "height": 380
+      },
+      "contents": [
+        {
+          "x": 140,
+          "y": 200,
+          "type": "file"
+        },
+        {
+          "x": 400,
+          "y": 200,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.0",
+    "@types/adm-zip": "^0.5.8",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.7.4",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "dotenv": "^16.6.1",
+    "electron": "^32.1.2",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@codemirror/lang-markdown": "^6.3.0",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "@codemirror/view": "^6.34.1",
+    "adm-zip": "^0.5.17",
+    "better-sqlite3": "^11.3.0",
+    "codemirror": "^6.0.1",
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^14.1.0",
+    "pdfjs-dist": "^4.7.76",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

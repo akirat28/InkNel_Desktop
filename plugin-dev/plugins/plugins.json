@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": "mermaid",
+      "manifest": "mermaid/mermaid.json"
+    },
+    {
+      "id": "calendar",
+      "manifest": "calendar/calendar.json"
+    }
+  ]
+}
