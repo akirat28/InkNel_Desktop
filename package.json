@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "description": "Markdown memo app for desktop (Electron) with future cloud sync",
+  "license": "SEE LICENSE IN LICENSE.md",
   "main": "out/main/index.js",
   "scripts": {
     "postinstall": "node scripts/patch-electron-name.cjs && electron-rebuild -f -w better-sqlite3",

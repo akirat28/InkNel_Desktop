@@ -510,28 +510,27 @@ function DeleteNoteConfirm({
 }
 
 /**
- * 「固定タブ」マーカー用のピン(画鋲)アイコン。
- * 他のアイコン (Chevron / Summarize 等) と同じ stroke="currentColor" で
- * テーマ色に追従させつつ、頭部は塗りつぶしの円、軸は太めの線にして
- * 「ピンが立っている」状態が直感的に分かるようにする。
+ * 「固定タブ」マーカー用の画鋲アイコン。
+ * Lucide 風の側面押しピンシルエットで、塗りつぶし＋アウトラインの
+ * ハイブリッド描画にしてタブバーで存在感を出す。色は CSS 側で赤系を指定。
  */
 function PinIcon() {
   return (
     <svg
-      width="11"
-      height="11"
+      width="12"
+      height="12"
       viewBox="0 0 24 24"
-      fill="none"
+      fill="currentColor"
       stroke="currentColor"
-      strokeWidth="2.2"
+      strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      {/* 丸い頭 (塗りつぶし) */}
-      <circle cx="12" cy="7" r="4" fill="currentColor" stroke="none" />
-      {/* 針 (太めの線) — 頭から下に伸ばす */}
-      <line x1="12" y1="11" x2="12" y2="20" strokeWidth="3" />
+      {/* 針 (頭部から下に伸びる) */}
+      <path d="M12 17v5" fill="none" strokeWidth="2" />
+      {/* 押しピン本体: ヘッド+ディスク+軸根本のシルエット */}
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
     </svg>
   );
 }

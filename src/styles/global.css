@@ -2958,8 +2958,8 @@ body,
 }
 
 /* 「固定タブ」マーカー: タイトル左に小さなピン SVG を表示。
-   他アイコンと同じく stroke="currentColor" を採用してテーマ色に追従する。
-   active タブでは accent 色寄りに、非 active タブでは fg-muted 寄りに。 */
+   赤系で固定状態の視認性を上げ、active/inactive とも同じ色味で統一する。
+   軽い drop-shadow で「立っている」質感を出す。 */
 .tab__pin {
   flex-shrink: 0;
   display: inline-flex;
@@ -2967,12 +2967,24 @@ body,
   justify-content: center;
   width: 14px;
   height: 14px;
-  color: var(--fg-muted);
+  color: #ef4444;
+  filter: drop-shadow(0 0 1.5px rgba(239, 68, 68, 0.45));
   user-select: none;
 }
 
+[data-theme='light'] .tab__pin {
+  color: #dc2626;
+  filter: drop-shadow(0 0 1px rgba(220, 38, 38, 0.35));
+}
+
 .tab.tab--active .tab__pin {
-  color: var(--accent, var(--fg));
+  color: #f87171;
+  filter: drop-shadow(0 0 2px rgba(248, 113, 113, 0.55));
+}
+
+[data-theme='light'] .tab.tab--active .tab__pin {
+  color: #dc2626;
+  filter: drop-shadow(0 0 1.5px rgba(220, 38, 38, 0.5));
 }
 
 .tab__close {
