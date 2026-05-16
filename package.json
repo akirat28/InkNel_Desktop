@@ -73,11 +73,13 @@
     },
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb"
       ],
       "category": "Office",
       "icon": "build/icon.png",
-      "synopsis": "Markdown memo app for desktop"
+      "synopsis": "Markdown memo app for desktop",
+      "maintainer": "Akira Tanaka <akirat28@gmail.com>"
     },
     "dmg": {
       "title": "${productName} ${version}",
