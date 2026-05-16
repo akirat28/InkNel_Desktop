@@ -2233,14 +2233,19 @@ function PluginsPanel({ settings, onChange }: PanelProps) {
    * ランタイムロード済み (DL 版) プラグインを id でルックアップするマップ。
    * SettingsComponent はバンドル版だけでなく DL 版でも export 可能なので、
    * 両方を見て module を取得できるようにする。
-   * runtimePluginsTick が変わるたびに再構築される。
+   *
+   * useMemo は使わず毎レンダリングで再構築する。コストは小さく (数件程度)、
+   * モーダル再オープン時に「実際は loaded なのに lookup が空」のような
+   * タイミング不整合を確実に避けられる。再描画のトリガーは
+   * runtimePluginsTick が担当。
    */
-  const runtimeById = useMemo(() => {
-    const m = new Map<string, ReturnType<typeof getRuntimePlugins>[number]>();
-    for (const p of getRuntimePlugins()) m.set(p.id, p);
-    return m;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runtimePluginsTick]);
+  // runtimePluginsTick を参照することで「runtime が変更されたら必ず再描画」を保証
+  void runtimePluginsTick;
+  const runtimeById = new Map<
+    string,
+    ReturnType<typeof getRuntimePlugins>[number]
+  >();
+  for (const p of getRuntimePlugins()) runtimeById.set(p.id, p);
 
   const allPlugins = useMemo<DisplayPlugin[]>(() => {
     const removedSet = new Set(settings.removedPlugins);
