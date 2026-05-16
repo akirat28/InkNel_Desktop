@@ -24,6 +24,7 @@ import {
   getRuntimePlugins,
   importPluginById,
   unloadPluginById,
+  subscribeRuntimePlugins,
 } from '../plugins/runtimeLoader';
 import PinInput from './PinInput';
 
@@ -1971,6 +1972,14 @@ interface DisplayPlugin {
 
 function PluginsPanel({ settings, onChange }: PanelProps) {
   const bundled = useMemo(() => listPlugins(), []);
+  // ランタイムロード済みプラグインの変更を購読し、再レンダリングを発火させる。
+  // これにより DL 版プラグインの SettingsComponent がロード完了後にも反映される。
+  const [runtimePluginsTick, setRuntimePluginsTick] = useState(0);
+  useEffect(() => {
+    return subscribeRuntimePlugins(() =>
+      setRuntimePluginsTick((n) => n + 1),
+    );
+  }, []);
   const enabledSet = useMemo(
     () => new Set(settings.enabledPlugins),
     [settings.enabledPlugins],
@@ -2219,6 +2228,19 @@ function PluginsPanel({ settings, onChange }: PanelProps) {
     for (const p of bundled) m.set(p.id, p);
     return m;
   }, [bundled]);
+
+  /**
+   * ランタイムロード済み (DL 版) プラグインを id でルックアップするマップ。
+   * SettingsComponent はバンドル版だけでなく DL 版でも export 可能なので、
+   * 両方を見て module を取得できるようにする。
+   * runtimePluginsTick が変わるたびに再構築される。
+   */
+  const runtimeById = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof getRuntimePlugins>[number]>();
+    for (const p of getRuntimePlugins()) m.set(p.id, p);
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runtimePluginsTick]);
 
   const allPlugins = useMemo<DisplayPlugin[]>(() => {
     const removedSet = new Set(settings.removedPlugins);
@@ -2499,10 +2521,12 @@ function PluginsPanel({ settings, onChange }: PanelProps) {
         <div className="plugins-panel__list">
           {allPlugins.map((p) => {
             const hasLocalCopy = downloadedById.has(p.id);
-            // バンドル版プラグインのみ SettingsComponent を持ち得る。
+            // SettingsComponent はバンドル版・ランタイムロード版どちらの module からも
+            // 取得を試みる (DL 版プラグインでも設定 UI を出せるようにするため)。
             // 「プラグインが有効化されている」かつ「SettingsComponent を実装」
             // の双方を満たすときだけ、インライン設定 UI を表示する。
-            const moduleRef = bundledById.get(p.id)?.module;
+            const moduleRef =
+              bundledById.get(p.id)?.module ?? runtimeById.get(p.id)?.module;
             const PluginSettingsUI = moduleRef?.SettingsComponent;
             const showPluginSettings =
               !!PluginSettingsUI &&
