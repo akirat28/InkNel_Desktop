@@ -200,6 +200,7 @@ const en: Locale = {
       backup: 'Backup',
       restore: 'Restore',
       reset: 'Reset',
+      about: 'License',
     },
     general: {
       theme: 'Theme',
@@ -440,6 +441,13 @@ const en: Locale = {
       confirmDialog:
         'Really reset?\n\nThe DB (note list, folders, settings) will be deleted and the app will restart.\n\n.md files in the storage folder are kept; re-import them after restart with "Sync".',
       failed: 'Reset failed.',
+    },
+    about: {
+      title: 'License',
+      intro:
+        'This service is provided under the license terms of the original project.',
+      copyright: 'InkNel Copyright (c) 2026 Akira Tanaka',
+      originalLabel: 'Original Project:',
     },
   },
 };

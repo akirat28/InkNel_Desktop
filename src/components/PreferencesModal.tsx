@@ -73,7 +73,8 @@ type CategoryKey =
   | 'plugins'
   | 'backup'
   | 'restore'
-  | 'reset';
+  | 'reset'
+  | 'about';
 
 interface Category {
   key: CategoryKey;
@@ -105,6 +106,7 @@ export default function PreferencesModal({
       { key: 'backup', label: t.settings.categories.backup },
       { key: 'restore', label: t.settings.categories.restore },
       { key: 'reset', label: t.settings.categories.reset },
+      { key: 'about', label: t.settings.categories.about },
     ],
     [t],
   );
@@ -186,6 +188,7 @@ export default function PreferencesModal({
             {active === 'backup' && <BackupPanel />}
             {active === 'restore' && <RestorePanel />}
             {active === 'reset' && <ResetPanel />}
+            {active === 'about' && <AboutPanel />}
           </section>
         </div>
       </div>
@@ -3411,6 +3414,43 @@ function ResetPanel() {
             </>
           )}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ----- ライセンス / About パネル -----
+// 元プロジェクト由来のコードを利用していることを明記する。
+// LICENSE.md の条件に従い、オリジナルプロジェクト名 / 作者 / リポジトリURLを表示。
+function AboutPanel() {
+  const t = useT();
+  const repoUrl = 'https://github.com/akirat28/InkNel_Desktop';
+  return (
+    <div className="prefs__section">
+      <h3 className="prefs__section-title">{t.settings.about.title}</h3>
+
+      <div className="about-panel__card">
+        <p className="about-panel__intro">{t.settings.about.intro}</p>
+
+        <div className="about-panel__block">
+          <div className="about-panel__copyright">
+            {t.settings.about.copyright}
+          </div>
+
+          <div className="about-panel__originalLabel">
+            {t.settings.about.originalLabel}
+          </div>
+          <a
+            href="#"
+            className="about-panel__link"
+            onClick={(e) => {
+              e.preventDefault();
+              void window.api.shell.openExternal(repoUrl);
+            }}
+          >
+            {repoUrl}
+          </a>
+        </div>
       </div>
     </div>
   );

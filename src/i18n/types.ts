@@ -220,6 +220,7 @@ export interface Locale {
       backup: string;
       restore: string;
       reset: string;
+      about: string;
     };
     general: {
       theme: string;
@@ -423,6 +424,12 @@ export interface Locale {
       executingBtn: string;
       confirmDialog: string;
       failed: string;
+    };
+    about: {
+      title: string;
+      intro: string;
+      copyright: string;
+      originalLabel: string;
     };
   };
 }

@@ -5093,6 +5093,61 @@ body,
   color: var(--fg-muted);
 }
 
+/* ----- About / License パネル -----
+   オリジナルプロジェクトのライセンス条件に基づく表記。
+   読みやすく、リンクが目立つ控えめなカードレイアウト。 */
+.about-panel__card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px 20px;
+  font-size: 13px;
+  color: var(--fg);
+  line-height: 1.7;
+}
+
+.about-panel__intro {
+  margin: 0 0 16px;
+  color: var(--fg-muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.about-panel__block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.about-panel__copyright {
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 8px;
+  letter-spacing: 0.01em;
+}
+
+.about-panel__originalLabel {
+  font-size: 12px;
+  color: var(--fg-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.about-panel__link {
+  color: var(--accent);
+  text-decoration: none;
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+}
+
+.about-panel__link:hover {
+  text-decoration: underline;
+}
+
 /* メインカード */
 .backup-panel__card {
   display: flex;

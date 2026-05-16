@@ -200,6 +200,7 @@ const ja: Locale = {
       backup: 'バックアップ',
       restore: 'リストア',
       reset: '初期化',
+      about: 'ライセンス',
     },
     general: {
       theme: 'テーマ',
@@ -444,6 +445,13 @@ const ja: Locale = {
       confirmDialog:
         '本当に初期化しますか？\n\nDB（ノート一覧・フォルダ・設定）が削除され、アプリが再起動します。\n\n保存先フォルダの .md ファイル等は残るので、再起動後に「同期」で取り込み直すことができます。',
       failed: '初期化に失敗しました',
+    },
+    about: {
+      title: 'ライセンス',
+      intro:
+        '当サービスはオリジナルプロジェクトのライセンス条件に従って提供されています。',
+      copyright: 'InkNel Copyright (c) 2026 Akira Tanaka',
+      originalLabel: 'Original Project:',
     },
   },
 };
