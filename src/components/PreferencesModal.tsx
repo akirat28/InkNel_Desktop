@@ -2298,7 +2298,12 @@ function PluginsPanel({ settings, onChange }: PanelProps) {
     //   - 公開カタログがまだ古くても新版で動作確認できる
     //   - sourceBaseUrl は 'inknel-plugin://' とし、ダウンロード処理に
     //     向かないので「インストール」ボタンは出さない設計（後の手当て）
-    if (settings.pluginDevMode) {
+    //
+    // `import.meta.env.DEV` ガードは必須: 本番パッケージで誤って
+    // `pluginDevMode` が true のまま起動した場合、plugin-dev/ が存在せず
+    // 公式カタログにも到達しないため「プラグインが見つかりません」に
+    // なってしまう。本番では静的にツリーシェイクで除去される。
+    if (import.meta.env.DEV && settings.pluginDevMode) {
       try {
         const dev = await window.api.plugins.fetchDevCatalog();
         if (!dev || dev.rows.length === 0) {
