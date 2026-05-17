@@ -1281,6 +1281,17 @@ export default function App() {
       prev.includes(created.id) ? prev : [...prev, created.id],
     );
     setTabViews((prev) => ({ ...prev, [created.id]: 'edit' }));
+    // 新規ノートは作成直後から「固定タブ」として扱う。
+    // - これで preview-tab スワップ対象外になり、タイトル/フォルダの
+    //   1 文字目入力で誤って前のタブへ切り替わる事故を防ぐ
+    // - 📍 も作成直後から表示される (旧モデルの体感とも一致)
+    setPinnedTabIds((prev) =>
+      prev.includes(created.id) ? prev : [...prev, created.id],
+    );
+    // 新規ノート作成時は preview スロットを解放する。
+    // 古い previewTabId を持ち越すと、後続の単発クリックで意図しないタブが
+    // 入れ替えられる可能性がある。新規ノート起点では preview 概念をリセット。
+    setPreviewTabId(null);
     setSidebarMode('files');
     // 作成先フォルダ（とその全祖先）を展開して、作成したノートが見えるようにする
     if (created.folder) {
