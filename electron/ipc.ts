@@ -1,4 +1,12 @@
-import { app, ipcMain, shell, dialog, BrowserWindow, Menu } from 'electron';
+import {
+  app,
+  ipcMain,
+  shell,
+  dialog,
+  BrowserWindow,
+  Menu,
+  nativeTheme,
+} from 'electron';
 import {
   copyFileSync,
   existsSync,
@@ -87,6 +95,25 @@ const MAX_IMAGE_BYTES = 25 * 1024 * 1024; // 25 MB
 const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024; // 100 MB
 /** AI へ送る本文の最大文字数。過大入力でアプリが固まるのを避ける。 */
 const MAX_AI_INPUT_CHARS = 160_000;
+
+/**
+ * アプリの theme 設定 ('dark' | 'light' | その他) を Electron の
+ * nativeTheme.themeSource に反映する。これにより OS ネイティブメニュー
+ * (`Menu.popup()` 系のコンテキストメニュー / ケバブメニュー) が
+ * アプリのテーマと同じ配色で表示される。
+ *
+ * 値:
+ *   - 'light'  → ライト固定 (システムが Dark でもメニューはライト)
+ *   - 'dark'   → ダーク固定
+ *   - その他   → 'system' (OS 設定に追従)
+ */
+function applyNativeTheme(theme: string): void {
+  if (theme === 'light' || theme === 'dark') {
+    nativeTheme.themeSource = theme;
+  } else {
+    nativeTheme.themeSource = 'system';
+  }
+}
 
 type AiProvider =
   | 'general'
@@ -1061,6 +1088,15 @@ export function normalizeFolderPath(input: string): string {
 }
 
 export function registerIpc(): void {
+  // 起動時、永続化された theme 設定をネイティブメニューにも反映する。
+  // (renderer の CSS テーマだけでなく OS ネイティブメニューもアプリ設定に合わせる)
+  try {
+    const storedTheme = getAllSettings()['appearance.theme'];
+    applyNativeTheme(typeof storedTheme === 'string' ? storedTheme : 'system');
+  } catch {
+    // DB 未初期化など初回起動直後はスキップ。settings:set 経由でも更新される。
+  }
+
   ipcMain.handle('notes:list', (): NoteMeta[] => {
     return listNotes();
   });
@@ -1339,6 +1375,10 @@ export function registerIpc(): void {
     setSetting(key, value);
     // 保存先パスが変わったら次の I/O で再解決させる
     if (key === STORAGE_PATH_SETTING_KEY) clearStorageRootCache();
+    // テーマが変わったら OS ネイティブメニュー (コンテキストメニュー等) も
+    // 追従させる。light/dark を nativeTheme.themeSource に反映することで、
+    // ライトテーマ時に黒背景のメニューが出る問題を回避する。
+    if (key === 'appearance.theme') applyNativeTheme(value);
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
         win.webContents.send('settings:changed');
