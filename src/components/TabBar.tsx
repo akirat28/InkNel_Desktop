@@ -28,11 +28,15 @@ interface Props {
   aiEnabled: boolean;
   /**
    * 「プレビュータブ」として保持されているタブの ID（任意）。
-   * このタブ以外のタブには 📍 を表示し、「固定タブ」を視覚化する。
-   * null の場合（= openNoteInNewTab=true もしくは preview-tab なし）は
-   * `pinIndicatorEnabled` が false なら 📍 を一切出さない、`true` なら全タブ固定とみなす。
+   * preview-tab スワップ動作の参照に使う (📍 表示判定には使わない)。
    */
   previewTabId: string | null;
+  /**
+   * 明示的にピン留めされたタブ ID の一覧。📍 はこれに含まれるタブだけ表示する。
+   * 旧モデルは「preview tab 以外すべて 📍」だったため、タブクリックなどで
+   * 一時的にピンが消える問題があった。新モデルではここに入ったら閉じるまで永続。
+   */
+  pinnedTabIds: readonly string[];
   /** 📍 表示の有効化フラグ（preview-tab モードが活きている時に true） */
   pinIndicatorEnabled: boolean;
 }
@@ -67,6 +71,7 @@ export default function TabBar({
   aiChatOpen,
   aiEnabled,
   previewTabId,
+  pinnedTabIds,
   pinIndicatorEnabled,
 }: Props) {
   const t = useT();
@@ -232,11 +237,12 @@ export default function TabBar({
               ? buildPath(meta.folder, meta.title)
               : title;
             const isActive = id === activeId;
-            // 📍 表示: preview-tab モード(`pinIndicatorEnabled`)時、
-            // 「preview tab ではない」タブだけに 📍 を立てて固定済み(編集 or
-            // ダブルクリック由来)であることを示す。
+            // 📍 表示: pinIndicatorEnabled 有効 && pinnedTabIds に含まれる時のみ。
+            // ピン状態はホスト (App.tsx) 側で明示的に管理されており、ここでは
+            // ルックアップだけ行う。タブクリックや preview スワップで一時的に
+            // ピンが消えないよう、previewTabId は判定から除外。
             const isPinned =
-              pinIndicatorEnabled && previewTabId !== id;
+              pinIndicatorEnabled && pinnedTabIds.includes(id);
             const isDragging = draggingIdRef.current === id;
             const dropLeft =
               dropTarget?.id === id && dropTarget.side === 'before';

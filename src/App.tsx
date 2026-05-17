@@ -105,6 +105,15 @@ export default function App() {
    * - openNoteInNewTab=true ではこの仕組みは使われず、常に null に近い状態を保つ。
    */
   const [previewTabId, setPreviewTabId] = useState<string | null>(null);
+  /**
+   * 明示的に「ピン留め」されたタブ ID の集合 (順序維持のため配列)。
+   * - ダブルクリックで開く / 本文 or メタを編集する のいずれかで自動的に追加される。
+   * - 一度入ったらタブを閉じるまで残り続ける (タブクリックや再選択では外れない)。
+   * - 表示の 📍 はこの集合の有無で判定する (旧モデルは previewTabId の補集合だった
+   *   ためタブクリックで一時的に外れていた)。
+   * - previewTabId と相互排他: ピン入り = previewTabId から外す。
+   */
+  const [pinnedTabIds, setPinnedTabIds] = useState<string[]>([]);
 
   // アクティブタブの view モード（tabViews から導出）
   const view: ViewKey = activeId ? tabViews[activeId] ?? 'preview' : 'preview';
@@ -845,6 +854,28 @@ export default function App() {
         setTabViews(
           Object.fromEntries(restoredTabs.map((id) => [id, 'preview'])),
         );
+        // ピン状態の復元。保存されていなければ「開いていたタブ全部をピン扱い」で
+        // 互換 (旧モデルは preview-tab 以外すべて 📍 を表示していたため、復元時に
+        // ピン無しだとユーザー体感が悪化する)。
+        const rawPins = rawSettings['ui.pinnedTabs'];
+        let restoredPins: string[] = [];
+        if (rawPins) {
+          try {
+            const arr = JSON.parse(rawPins);
+            if (Array.isArray(arr)) {
+              restoredPins = arr.filter(
+                (s): s is string =>
+                  typeof s === 'string' && restoredTabs.includes(s),
+              );
+            }
+          } catch {
+            /* 不正な JSON は無視 */
+          }
+        } else {
+          // 初回 (旧バージョンからのアップグレード) は全タブをピン扱い
+          restoredPins = [...restoredTabs];
+        }
+        setPinnedTabIds(restoredPins);
         const savedActive = rawSettings['ui.activeTab'];
         const activeToLoad =
           savedActive && restoredTabs.includes(savedActive)
@@ -933,9 +964,13 @@ export default function App() {
         JSON.stringify(openTabIds),
       );
       void window.api.settings.set('ui.activeTab', activeId ?? '');
+      void window.api.settings.set(
+        'ui.pinnedTabs',
+        JSON.stringify(pinnedTabIds),
+      );
     }, 300);
     return () => clearTimeout(timer);
-  }, [openTabIds, activeId]);
+  }, [openTabIds, activeId, pinnedTabIds]);
 
   // ----- ノート選択（保留中の保存をフラッシュしてから切り替え） -----
   // 保護ノートとシークレットノートは、セッション中に未解錠なら
@@ -987,27 +1022,42 @@ export default function App() {
       //   クリック=新しいタブ」モード）。previewTabId は使わない。
       // - openNoteInNewTab=false (既定): プレビュータブ動作。直前の preview-tab を
       //   ・存在 ・未編集 ・自分以外、なら閉じて新ノートを同位置に置く。
+      // ----- ピン (📍) の永続化ロジック -----
+      // ピン状態は新モデルでは明示的 (pinnedTabIds) に管理される。
+      // pin=true で開いた / 編集したタブはここに入り、閉じるまで外れない。
+      // 既にピンされているタブ id を再選択する経路では、preview-tab 経路は
+      // 一切走らせず「現在の表示状態を変えない選択」だけする。
+      const alreadyPinned = pinnedTabIds.includes(id);
+
       if (options?.pin) {
         // ピン留めオープン: 末尾に追加する(既に開いていれば順序維持)。
-        // また、ダブルクリックは「1 回目の click → 2 回目の dblclick」の順で
-        // ハンドラが発火するため、1 回目で preview-tab logic により
-        // previewTabId が id に設定されている可能性がある。
-        // pin 経路ではそれを解除して「固定タブ」状態へ昇格させる(=📍 表示)。
         setOpenTabIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+        // pinnedTabIds に追加 + previewTabId と相互排他にする
+        setPinnedTabIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
         setPreviewTabId((prev) => (prev === id ? null : prev));
       } else if (settings.openNoteInNewTab) {
         // 単純に追加
         setOpenTabIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
         // 新規タブモードでは preview-tab の概念を使わない
         setPreviewTabId(null);
+      } else if (alreadyPinned) {
+        // 既にピンされているタブをクリック (タブバー or サイドバー):
+        // 既存のピンを維持し、preview-tab 入替えロジックを走らせない。
+        // → タブクリックでピンが一時的に消えるバグを根本解決。
+        setOpenTabIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
       } else {
-        // プレビュータブモード
+        // プレビュータブモード (未ピンタブの単発クリック)
         setOpenTabIds((prev) => {
           // 既に開いていれば preview 入替え不要、そのまま選択するだけ
           if (prev.includes(id)) return prev;
           // 直前のプレビュータブが存在し、それが「未編集」(= previewTabId が
-          // クリアされていない)であり、自分自身ではないなら閉じて入替え
-          if (previewTabId && previewTabId !== id && prev.includes(previewTabId)) {
+          // クリアされていない)で「未ピン」かつ自分自身ではないなら閉じて入替え
+          if (
+            previewTabId &&
+            previewTabId !== id &&
+            !pinnedTabIds.includes(previewTabId) &&
+            prev.includes(previewTabId)
+          ) {
             return prev.map((x) => (x === previewTabId ? id : x));
           }
           // それ以外は末尾に追加
@@ -1086,6 +1136,7 @@ export default function App() {
       settings.shareProvider,
       settings.openNoteInNewTab,
       previewTabId,
+      pinnedTabIds,
     ],
   );
 
@@ -1138,11 +1189,15 @@ export default function App() {
         sessionAttachmentsRef.current.add(f);
 
       if (!activeId) return;
-      // 編集中のタブがプレビュータブ扱いなら「固定」する（以降のサイドバー
-      // クリックで自動的に置き換えられない）
+      // 編集中のタブを「固定 (ピン)」状態に昇格させる:
+      //   - pinnedTabIds へ追加 (以降タブクリックでもピン外れない)
+      //   - 同タブが previewTabId だったら相互排他のため null に
       if (previewTabId && previewTabId === activeId) {
         setPreviewTabId(null);
       }
+      setPinnedTabIds((prev) =>
+        prev.includes(activeId) ? prev : [...prev, activeId],
+      );
       pendingBody.current = { id: activeId, body: next };
       if (bodyTimer.current) clearTimeout(bodyTimer.current);
       bodyTimer.current = setTimeout(async () => {
@@ -1161,10 +1216,13 @@ export default function App() {
   const scheduleMetaSave = useCallback(
     (title: string, folder: string, tags: string[]) => {
       if (!activeId) return;
-      // メタ編集も「プレビュータブの固定化」イベントとして扱う
+      // メタ編集も「ピン昇格」イベントとして扱う (body 編集と同じ)
       if (previewTabId && previewTabId === activeId) {
         setPreviewTabId(null);
       }
+      setPinnedTabIds((prev) =>
+        prev.includes(activeId) ? prev : [...prev, activeId],
+      );
       pendingMeta.current = { id: activeId, title, folder, tags };
       if (metaTimer.current) clearTimeout(metaTimer.current);
       metaTimer.current = setTimeout(async () => {
@@ -1334,6 +1392,10 @@ export default function App() {
       if (previewTabId === id) {
         setPreviewTabId(null);
       }
+      // ピンタブが閉じられたらピン状態も掃除 (再度開いた時はピン無しから始まる)
+      setPinnedTabIds((prev) =>
+        prev.includes(id) ? prev.filter((x) => x !== id) : prev,
+      );
 
       if (isClosingActive) {
         const nextActive = nextTabs[Math.min(idx, nextTabs.length - 1)] ?? null;
@@ -1386,6 +1448,11 @@ export default function App() {
       if (previewTabId && idsSet.has(previewTabId)) {
         setPreviewTabId(null);
       }
+      // ピンタブが閉じる対象に含まれていれば pinnedTabIds からも除去
+      setPinnedTabIds((prev) => {
+        const next = prev.filter((id) => !idsSet.has(id));
+        return next.length === prev.length ? prev : next;
+      });
 
       if (closingActive) {
         if (remaining.length === 0) {
@@ -2520,6 +2587,7 @@ export default function App() {
             aiChatOpen={aiChatOpen}
             aiEnabled={getActiveAiSettings(settings).token.trim().length > 0}
             previewTabId={previewTabId}
+            pinnedTabIds={pinnedTabIds}
             // 📍 表示は preview-tab モードのときだけ。
             // openNoteInNewTab=true(常に新規タブ) では preview の概念がないため、
             // 📍 を出すと全タブに 📍 が並んで意味を失うので隠す。
