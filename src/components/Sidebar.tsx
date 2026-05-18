@@ -1069,6 +1069,32 @@ function TreeView({
             className={`tree__file-li ${isProtected ? 'is-protected' : ''} ${isSecret ? 'is-secret' : ''}`}
             role="treeitem"
             data-note-id={f.id}
+            // ノートの上にノート/フォルダがドラッグされた場合、ここで drop を
+            // 受け止めて何もしない (= 移動キャンセル)。これがないと event が
+            // ルート領域の handleRootDrop までバブルして「最上位へ移動」が
+            // 発火してしまう (ノート上にドロップ = 同じフォルダ内移動の意図)。
+            onDragOver={(e) => {
+              const types = e.dataTransfer.types;
+              if (
+                types.includes(NOTE_DRAG_TYPE) ||
+                types.includes(FOLDER_DRAG_TYPE)
+              ) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = 'none';
+              }
+            }}
+            onDrop={(e) => {
+              const types = e.dataTransfer.types;
+              if (
+                types.includes(NOTE_DRAG_TYPE) ||
+                types.includes(FOLDER_DRAG_TYPE)
+              ) {
+                e.preventDefault();
+                e.stopPropagation();
+                // 何もしない: ドラッグ元のフォルダにそのまま残す
+              }
+            }}
           >
             <button
               type="button"
