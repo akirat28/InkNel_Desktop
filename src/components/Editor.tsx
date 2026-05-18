@@ -425,6 +425,39 @@ const Editor = forwardRef<EditorHandle, Props>(function Editor(
     });
     viewRef.current = view;
 
+    // ----- マウント直後の自動フォーカス -----
+    // Windows / Electron 環境で「edit に切り替えても CodeMirror に
+    // フォーカスが入らずカーソルも見えない、ツールバーも反応しない」
+    // という症状が出るため、明示的に focus を取りに行く。
+    // requestAnimationFrame で 1 フレーム待つのは、親の表示モード切替や
+    // タブ切替直後にレイアウト/可視性が確定する前に focus を呼ぶと
+    // 一部環境で focus イベントが発火しないため。
+    const focusRaf = requestAnimationFrame(() => {
+      try {
+        view.focus();
+      } catch {
+        /* destroy 直後等の race 対策 */
+      }
+    });
+
+    // ----- ホスト div クリックで強制フォーカス -----
+    // CodeMirror の .cm-content より外側 (上下の余白、minimap の隙間など)
+    // をクリックした時、CodeMirror 標準の挙動では focus が入らない。
+    // ここで手動で focus を入れて「クリックしても cursor が出ない」事故を防ぐ。
+    const hostClick = (e: MouseEvent) => {
+      // 既に view 内の要素にフォーカスがあれば何もしない
+      if (view.hasFocus) return;
+      // ボタンや入力欄など、focus を取るべき別要素ならスキップ
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('button, input, textarea, select, a')) return;
+      try {
+        view.focus();
+      } catch {
+        /* destroyed */
+      }
+    };
+    host.addEventListener('mousedown', hostClick);
+
     // CodeMirror の実スクロール要素 (.cm-scroller) に scroll を直接購読する。
     // App 側で querySelector で探したりするとタイミング依存になるので、
     // ここでアタッチしてコンポーネント自身のライフサイクルに合わせる。
@@ -437,6 +470,8 @@ const Editor = forwardRef<EditorHandle, Props>(function Editor(
     setScrollHost(scrollDom);
 
     return () => {
+      cancelAnimationFrame(focusRaf);
+      host.removeEventListener('mousedown', hostClick);
       scrollDom.removeEventListener('scroll', scrollHandler);
       view.destroy();
       viewRef.current = null;
