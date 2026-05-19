@@ -53,6 +53,47 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('menu:replace', handler);
   },
 
+  /** メインプロセスの「Macro > キーキャプチャ開始」押下を購読する */
+  onMacroCaptureStart(callback: () => void): () => void {
+    const handler = () => callback();
+    ipcRenderer.on('menu:macro-start', handler);
+    return () => ipcRenderer.removeListener('menu:macro-start', handler);
+  },
+
+  /** メインプロセスの「Macro > キーキャプチャ終了」押下を購読する */
+  onMacroCaptureStop(callback: () => void): () => void {
+    const handler = () => callback();
+    ipcRenderer.on('menu:macro-stop', handler);
+    return () => ipcRenderer.removeListener('menu:macro-stop', handler);
+  },
+
+  /** メインプロセスの「Macro > キャプチャ実行」押下を購読する */
+  onMacroPlay(callback: () => void): () => void {
+    const handler = () => callback();
+    ipcRenderer.on('menu:macro-play', handler);
+    return () => ipcRenderer.removeListener('menu:macro-play', handler);
+  },
+
+  /** メインプロセスの「Macro > 記録したキーを表示」押下を購読する */
+  onMacroShow(callback: () => void): () => void {
+    const handler = () => callback();
+    ipcRenderer.on('menu:macro-show', handler);
+    return () => ipcRenderer.removeListener('menu:macro-show', handler);
+  },
+
+  /** メインプロセスの「Macro > 保存済みマクロ」押下を購読する */
+  onMacroSelect(callback: (id: string) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, id: string) =>
+      callback(id);
+    ipcRenderer.on('menu:macro-select', handler);
+    return () => ipcRenderer.removeListener('menu:macro-select', handler);
+  },
+
+  /** 保存済みマクロ名をアプリメニューへ反映する */
+  updateMacroMenu(macros: Array<{ id: string; name: string }>): void {
+    ipcRenderer.send('macro:saved-list', macros);
+  },
+
   /** メインプロセスの「ファイルの読み込み」メニュー押下を購読する */
   onImportMd(callback: () => void): () => void {
     const handler = () => callback();

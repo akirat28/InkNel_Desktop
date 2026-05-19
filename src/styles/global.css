@@ -3202,11 +3202,30 @@ body,
   min-width: 0;
   min-height: 0;
   height: 100%;
+  position: relative;
 }
 
 .editor-pane > .editor {
   flex: 1;
   min-width: 0;
+}
+
+.editor-macro-notice {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  pointer-events: none;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px var(--shadow);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 /* ---------- Minimap ---------- */
@@ -4607,6 +4626,89 @@ body,
 .modal__btn:hover {
   background: var(--hover);
   border-color: var(--accent);
+}
+
+.modal--macro-keys {
+  width: min(560px, 92vw);
+}
+
+.macro-keys {
+  max-height: min(56vh, 520px);
+  overflow: auto;
+  display: grid;
+  gap: 18px;
+}
+
+.macro-keys__section {
+  display: grid;
+  gap: 10px;
+}
+
+.macro-keys__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.macro-keys__item {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.macro-keys__index {
+  color: var(--fg-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.macro-keys__key {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+.macro-keys__save {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.macro-keys__input {
+  width: 100%;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font: inherit;
+}
+
+.macro-keys__input:focus {
+  outline: 2px solid var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.macro-keys__saved-message {
+  margin: -2px 0 0;
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 /* ---------- Body ---------- */

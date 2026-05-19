@@ -9,7 +9,10 @@ import {
 } from 'react';
 import ActivityBar from './components/ActivityBar';
 import AiChatPanel from './components/AiChatPanel';
-import Editor, { type EditorHandle } from './components/Editor';
+import Editor, {
+  type EditorHandle,
+  type MacroAction,
+} from './components/Editor';
 import EditorToolbar from './components/EditorToolbar';
 import Preview, { type PreviewHandle } from './components/Preview';
 import Sidebar, {
@@ -24,6 +27,8 @@ import FindDialog from './components/FindDialog';
 import PasswordDialog from './components/PasswordDialog';
 import RenameDialog from './components/RenameDialog';
 import ReplaceDialog from './components/ReplaceDialog';
+import MacroKeysDialog from './components/MacroKeysDialog';
+import SavedMacroDialog from './components/SavedMacroDialog';
 import logoUrl from './assets/logo.png';
 import {
   DEFAULT_SETTINGS,
@@ -63,6 +68,66 @@ const AI_CHAT_WIDTH_DEFAULT = 360;
 const AI_CHAT_WIDTH_MIN = 280;
 const AI_CHAT_WIDTH_MAX = 720;
 const AI_CHAT_SPLITTER_WIDTH = 8;
+const SAVED_MACROS_STORAGE_KEY = 'inknel.savedMacros.v1';
+const SAVED_MACROS_LIMIT = 10;
+
+interface SavedMacro {
+  id: string;
+  name: string;
+  actions: MacroAction[];
+  display: string[];
+  createdAt: number;
+}
+
+function createSavedMacroId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+}
+
+function isMacroAction(value: unknown): value is MacroAction {
+  if (!value || typeof value !== 'object') return false;
+  const action = value as Partial<MacroAction>;
+  if (action.kind === 'text') {
+    return typeof action.text === 'string';
+  }
+  if (action.kind !== 'key' || !action.key || typeof action.key !== 'object') {
+    return false;
+  }
+  const key = action.key as Record<string, unknown>;
+  return (
+    typeof key.key === 'string' &&
+    typeof key.code === 'string' &&
+    typeof key.shiftKey === 'boolean' &&
+    typeof key.ctrlKey === 'boolean' &&
+    typeof key.altKey === 'boolean' &&
+    typeof key.metaKey === 'boolean'
+  );
+}
+
+function parseSavedMacros(): SavedMacro[] {
+  try {
+    const raw = window.localStorage.getItem(SAVED_MACROS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is SavedMacro => {
+        if (!item || typeof item !== 'object') return false;
+        const macro = item as Partial<SavedMacro>;
+        return (
+          typeof macro.id === 'string' &&
+          typeof macro.name === 'string' &&
+          Array.isArray(macro.actions) &&
+          macro.actions.every(isMacroAction) &&
+          Array.isArray(macro.display) &&
+          macro.display.every((line) => typeof line === 'string') &&
+          typeof macro.createdAt === 'number'
+        );
+      })
+      .slice(0, SAVED_MACROS_LIMIT);
+  } catch {
+    return [];
+  }
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -134,6 +199,16 @@ export default function App() {
   const [preferencesOpen, setPreferencesOpen] = useState<boolean>(false);
   const [replaceOpen, setReplaceOpen] = useState<boolean>(false);
   const [findOpen, setFindOpen] = useState<boolean>(false);
+  const [macroKeysOpen, setMacroKeysOpen] = useState<boolean>(false);
+  const [macroKeys, setMacroKeys] = useState<string[]>([]);
+  const [macroActions, setMacroActions] = useState<MacroAction[]>([]);
+  const [savedMacros, setSavedMacros] = useState<SavedMacro[]>(parseSavedMacros);
+  const [selectedSavedMacroId, setSelectedSavedMacroId] = useState<string | null>(
+    null,
+  );
+  const [savedMacroDialogId, setSavedMacroDialogId] = useState<string | null>(
+    null,
+  );
   const [aiChatOpen, setAiChatOpen] = useState<boolean>(false);
 
   // ----- 保護の解錠状態 -----
@@ -1331,6 +1406,146 @@ export default function App() {
       setReplaceOpen(true);
     });
   }, [activeId, view, setView]);
+
+  // ----- メニュー「Macro」購読 -----
+  // F1/F2/F3 は Editor 側の keydown でも処理する。メニューから選ばれた場合は
+  // アクティブノートを編集ビューにしてから、現在の EditorHandle に転送する。
+  useEffect(() => {
+    window.localStorage.setItem(
+      SAVED_MACROS_STORAGE_KEY,
+      JSON.stringify(savedMacros.slice(0, SAVED_MACROS_LIMIT)),
+    );
+    window.api.updateMacroMenu(
+      savedMacros.map((macro) => ({ id: macro.id, name: macro.name })),
+    );
+  }, [savedMacros]);
+
+  const runEditorMacroCommand = useCallback(
+    (command: 'start' | 'stop' | 'play') => {
+      if (!activeId) return;
+      const run = () => {
+        if (command === 'start') {
+          setSelectedSavedMacroId(null);
+          editorRef.current?.startKeyMacroCapture();
+        } else if (command === 'stop') {
+          editorRef.current?.stopKeyMacroCapture();
+        } else {
+          const selected = savedMacros.find(
+            (macro) => macro.id === selectedSavedMacroId,
+          );
+          if (selected) editorRef.current?.setKeyMacroActions(selected.actions);
+          editorRef.current?.playKeyMacro();
+        }
+      };
+      if (view === 'preview') {
+        setView('edit');
+        window.setTimeout(run, 0);
+      } else {
+        run();
+      }
+    },
+    [activeId, view, setView, savedMacros, selectedSavedMacroId],
+  );
+
+  const handleSaveMacro = useCallback(
+    (name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed || macroActions.length === 0) return;
+      const macro: SavedMacro = {
+        id: createSavedMacroId(),
+        name: trimmed,
+        actions: macroActions,
+        display: macroKeys,
+        createdAt: Date.now(),
+      };
+      setSavedMacros((prev) => [macro, ...prev].slice(0, SAVED_MACROS_LIMIT));
+      setSelectedSavedMacroId(macro.id);
+      editorRef.current?.setKeyMacroActions(macro.actions);
+    },
+    [macroActions, macroKeys],
+  );
+
+  const savedMacroDialogMacro = useMemo(
+    () =>
+      savedMacroDialogId
+        ? savedMacros.find((macro) => macro.id === savedMacroDialogId) ?? null
+        : null,
+    [savedMacroDialogId, savedMacros],
+  );
+
+  const handleRenameSavedMacro = useCallback(
+    (name: string) => {
+      const trimmed = name.trim();
+      if (!savedMacroDialogId || !trimmed) return;
+      setSavedMacros((prev) =>
+        prev.map((macro) =>
+          macro.id === savedMacroDialogId
+            ? { ...macro, name: trimmed }
+            : macro,
+        ),
+      );
+    },
+    [savedMacroDialogId],
+  );
+
+  const handleSetSavedMacroToF1 = useCallback(() => {
+    if (!savedMacroDialogMacro) return;
+    setSelectedSavedMacroId(savedMacroDialogMacro.id);
+    editorRef.current?.setKeyMacroActions(savedMacroDialogMacro.actions);
+  }, [savedMacroDialogMacro]);
+
+  useEffect(() => {
+    if (!selectedSavedMacroId) return;
+    const macro = savedMacros.find((item) => item.id === selectedSavedMacroId);
+    if (!macro) return;
+    const timer = window.setTimeout(() => {
+      editorRef.current?.setKeyMacroActions(macro.actions);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeId, view, savedMacros, selectedSavedMacroId]);
+
+  const handleDeleteSavedMacro = useCallback(() => {
+    if (!savedMacroDialogId) return;
+    setSavedMacros((prev) =>
+      prev.filter((macro) => macro.id !== savedMacroDialogId),
+    );
+    setSelectedSavedMacroId((current) =>
+      current === savedMacroDialogId ? null : current,
+    );
+    setSavedMacroDialogId(null);
+  }, [savedMacroDialogId]);
+
+  useEffect(() => {
+    return window.api?.onMacroCaptureStart(() =>
+      runEditorMacroCommand('start'),
+    );
+  }, [runEditorMacroCommand]);
+
+  useEffect(() => {
+    return window.api?.onMacroCaptureStop(() =>
+      runEditorMacroCommand('stop'),
+    );
+  }, [runEditorMacroCommand]);
+
+  useEffect(() => {
+    return window.api?.onMacroPlay(() => runEditorMacroCommand('play'));
+  }, [runEditorMacroCommand]);
+
+  useEffect(() => {
+    return window.api?.onMacroShow(() => {
+      setMacroKeys(editorRef.current?.getKeyMacroDisplay() ?? []);
+      setMacroActions(editorRef.current?.getKeyMacroActions() ?? []);
+      setMacroKeysOpen(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    return window.api?.onMacroSelect((id) => {
+      const macro = savedMacros.find((item) => item.id === id);
+      if (!macro) return;
+      setSavedMacroDialogId(id);
+    });
+  }, [savedMacros]);
 
   // ----- ストレージ同期からの通知でノート一覧を再取得 -----
   useEffect(() => {
@@ -2975,6 +3190,21 @@ export default function App() {
         }
         onClose={() => setRenameTarget(null)}
         onSubmit={(name) => void handleRenameSubmit(name)}
+      />
+      <MacroKeysDialog
+        open={macroKeysOpen}
+        keys={macroKeys}
+        onClose={() => setMacroKeysOpen(false)}
+        onSave={handleSaveMacro}
+      />
+      <SavedMacroDialog
+        open={savedMacroDialogMacro !== null}
+        name={savedMacroDialogMacro?.name ?? ''}
+        keys={savedMacroDialogMacro?.display ?? []}
+        onClose={() => setSavedMacroDialogId(null)}
+        onRename={handleRenameSavedMacro}
+        onSetToF1={handleSetSavedMacroToF1}
+        onDelete={handleDeleteSavedMacro}
       />
       <FindDialog
         open={findOpen}

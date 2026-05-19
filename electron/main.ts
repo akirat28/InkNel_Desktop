@@ -41,6 +41,10 @@ const APP_NAME = 'InkNel';
 const isDev =
   !app.isPackaged || !!process.env['ELECTRON_RENDERER_URL'];
 
+function isJapaneseSystemLocale(): boolean {
+  return app.getLocale().toLowerCase().startsWith('ja');
+}
+
 /**
  * 指定 BrowserWindow に対し、本番時のみ DevTools を開くキーボード
  * ショートカット (Cmd+Opt+I / Ctrl+Shift+I / F12) を抑制するハンドラを設定。
@@ -101,6 +105,7 @@ if (!gotTheLock) {
 
 let mainWindow: BrowserWindow | null = null;
 let preferencesWindow: BrowserWindow | null = null;
+let savedMacroMenuItems: Array<{ id: string; name: string }> = [];
 
 app.on('second-instance', () => {
   if (mainWindow) {
@@ -109,9 +114,9 @@ app.on('second-instance', () => {
   }
 });
 
-function sendToRenderer(channel: string): void {
+function sendToRenderer(channel: string, ...args: unknown[]): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(channel);
+    mainWindow.webContents.send(channel, ...args);
   }
 }
 
@@ -316,6 +321,40 @@ function buildAppMenu(): void {
         { role: 'zoomOut' },
         { type: 'separator' },
         { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: isJapaneseSystemLocale() ? 'マクロ' : 'Macro',
+      submenu: [
+        {
+          label: 'キャプチャ実行',
+          accelerator: 'F1',
+          click: () => sendToRenderer('menu:macro-play'),
+        },
+        {
+          label: 'キーキャプチャ開始',
+          accelerator: 'F2',
+          click: () => sendToRenderer('menu:macro-start'),
+        },
+        {
+          label: 'キーキャプチャ終了',
+          accelerator: 'F3',
+          click: () => sendToRenderer('menu:macro-stop'),
+        },
+        { type: 'separator' },
+        {
+          label: 'マクロの保存と名前',
+          click: () => sendToRenderer('menu:macro-show'),
+        },
+        ...(savedMacroMenuItems.length > 0
+          ? ([
+              { type: 'separator' as const },
+              ...savedMacroMenuItems.map((macro, index) => ({
+                label: `${index + 1}.${macro.name}`,
+                click: () => sendToRenderer('menu:macro-select', macro.id),
+              })),
+            ] satisfies MenuItemConstructorOptions[])
+          : []),
       ],
     },
     {
@@ -620,6 +659,22 @@ app.whenReady().then(() => {
   handleInknelPluginProtocol();
   registerIpc();
   ipcMain.handle('preferences:open-window', () => openPreferencesWindow());
+  ipcMain.on(
+    'macro:saved-list',
+    (_event, macros: Array<{ id: string; name: string }>) => {
+      savedMacroMenuItems = Array.isArray(macros)
+        ? macros
+            .filter(
+              (macro) =>
+                macro &&
+                typeof macro.id === 'string' &&
+                typeof macro.name === 'string',
+            )
+            .slice(0, 10)
+        : [];
+      buildAppMenu();
+    },
+  );
   buildAppMenu();
   createWindow();
 

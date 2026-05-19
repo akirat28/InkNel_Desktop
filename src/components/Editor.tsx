@@ -1,7 +1,37 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Compartment, EditorState, type Extension } from '@codemirror/state';
-import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import {
+  Compartment,
+  EditorState,
+  Prec,
+  type Extension,
+} from '@codemirror/state';
+import {
+  EditorView,
+  keymap,
+  lineNumbers,
+  highlightActiveLine,
+  runScopeHandlers,
+} from '@codemirror/view';
+import {
+  cursorCharLeft,
+  cursorCharRight,
+  cursorLineDown,
+  cursorLineEnd,
+  cursorLineStart,
+  cursorLineUp,
+  defaultKeymap,
+  deleteCharBackward,
+  deleteCharForward,
+  history,
+  historyKeymap,
+  insertNewlineAndIndent,
+  selectCharLeft,
+  selectCharRight,
+  selectLineDown,
+  selectLineEnd,
+  selectLineStart,
+  selectLineUp,
+} from '@codemirror/commands';
 import { syntaxTree } from '@codemirror/language';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
@@ -23,6 +53,19 @@ interface Props {
   /** エディタ右側にミニマップを表示するか */
   showMinimap?: boolean;
 }
+
+export interface MacroKey {
+  key: string;
+  code: string;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  metaKey: boolean;
+}
+
+export type MacroAction =
+  | { kind: 'key'; key: MacroKey }
+  | { kind: 'text'; text: string };
 
 /** テーマ名 → CodeMirror のテーマ extension。light は extension なし（デフォルト白）。 */
 function themeExtension(theme: Theme): Extension {
@@ -130,6 +173,206 @@ function shiftTabInCodeBlockCommand(view: EditorView): boolean {
     userEvent: 'delete.dedent',
   });
   return true;
+}
+
+function isFunctionKey(key: string): boolean {
+  return /^F\d{1,2}$/i.test(key);
+}
+
+function macroKeyFromEvent(event: KeyboardEvent): MacroKey {
+  return {
+    key: event.key,
+    code: event.code,
+    shiftKey: event.shiftKey,
+    ctrlKey: event.ctrlKey,
+    altKey: event.altKey,
+    metaKey: event.metaKey,
+  };
+}
+
+function macroKeyFromInputType(inputType: string): MacroKey | null {
+  if (inputType === 'deleteContentBackward') {
+    return {
+      key: 'Backspace',
+      code: 'Backspace',
+      shiftKey: false,
+      ctrlKey: false,
+      altKey: false,
+      metaKey: false,
+    };
+  }
+  if (inputType === 'deleteContentForward') {
+    return {
+      key: 'Delete',
+      code: 'Delete',
+      shiftKey: false,
+      ctrlKey: false,
+      altKey: false,
+      metaKey: false,
+    };
+  }
+  return null;
+}
+
+function shouldRecordMacroKey(event: KeyboardEvent): boolean {
+  if (isFunctionKey(event.key)) return false;
+  if (event.ctrlKey || event.metaKey) return true;
+  return [
+    'Alt',
+    'ArrowDown',
+    'ArrowLeft',
+    'ArrowRight',
+    'ArrowUp',
+    'Backspace',
+    'CapsLock',
+    'Control',
+    'Delete',
+    'End',
+    'Enter',
+    'Escape',
+    'Home',
+    'Meta',
+    'PageDown',
+    'PageUp',
+    'Shift',
+    'Tab',
+  ].includes(event.key);
+}
+
+function formatMacroKey(key: MacroKey): string {
+  const parts = [];
+  if (key.metaKey) parts.push('Meta');
+  if (key.ctrlKey) parts.push('Ctrl');
+  if (key.altKey) parts.push('Alt');
+  if (key.shiftKey) parts.push('Shift');
+  parts.push(key.key === ' ' ? 'Space' : key.key);
+  return parts.join(' + ');
+}
+
+function formatMacroText(text: string): string {
+  return `文字入力: ${text
+    .replace(/\t/g, '\\t')
+    .replace(/\n/g, '\\n')}`;
+}
+
+function formatMacroAction(action: MacroAction): string {
+  if (action.kind === 'text') return formatMacroText(action.text);
+  return formatMacroKey(action.key);
+}
+
+function replaceSelection(view: EditorView, text: string): void {
+  const { from, to } = view.state.selection.main;
+  view.dispatch({
+    changes: { from, to, insert: text },
+    selection: { anchor: from + text.length },
+    scrollIntoView: true,
+  });
+}
+
+function isCopyMacroKey(key: MacroKey): boolean {
+  return (
+    (key.ctrlKey || key.metaKey) &&
+    !key.altKey &&
+    key.key.toLowerCase() === 'c'
+  );
+}
+
+function isPasteMacroKey(key: MacroKey): boolean {
+  return (
+    (key.ctrlKey || key.metaKey) &&
+    !key.altKey &&
+    key.key.toLowerCase() === 'v'
+  );
+}
+
+function getSelectionText(view: EditorView): string {
+  const { from, to } = view.state.selection.main;
+  return view.state.doc.sliceString(from, to);
+}
+
+function replayMacroKey(
+  view: EditorView,
+  key: MacroKey,
+  clipboard: { current: string },
+): void {
+  if (isCopyMacroKey(key)) {
+    clipboard.current = getSelectionText(view);
+    void navigator.clipboard?.writeText(clipboard.current).catch(() => {
+      /* OS クリップボードへ書けなくても、マクロ内クリップボードで再生は続ける。 */
+    });
+    return;
+  }
+
+  if (isPasteMacroKey(key)) {
+    replaceSelection(view, clipboard.current);
+    return;
+  }
+
+  const event = new KeyboardEvent('keydown', {
+    key: key.key,
+    code: key.code,
+    shiftKey: key.shiftKey,
+    ctrlKey: key.ctrlKey,
+    altKey: key.altKey,
+    metaKey: key.metaKey,
+    bubbles: true,
+    cancelable: true,
+  });
+
+  if (runScopeHandlers(view, event, 'editor')) return;
+
+  if (key.key.length === 1 && !key.ctrlKey && !key.altKey && !key.metaKey) {
+    replaceSelection(view, key.key);
+    return;
+  }
+
+  switch (key.key) {
+    case 'Enter':
+      insertNewlineAndIndent(view);
+      return;
+    case 'Backspace':
+      deleteCharBackward(view);
+      return;
+    case 'Delete':
+      deleteCharForward(view);
+      return;
+    case 'ArrowLeft':
+      (key.shiftKey ? selectCharLeft : cursorCharLeft)(view);
+      return;
+    case 'ArrowRight':
+      (key.shiftKey ? selectCharRight : cursorCharRight)(view);
+      return;
+    case 'ArrowUp':
+      (key.shiftKey ? selectLineUp : cursorLineUp)(view);
+      return;
+    case 'ArrowDown':
+      (key.shiftKey ? selectLineDown : cursorLineDown)(view);
+      return;
+    case 'Home':
+      (key.shiftKey ? selectLineStart : cursorLineStart)(view);
+      return;
+    case 'End':
+      (key.shiftKey ? selectLineEnd : cursorLineEnd)(view);
+      return;
+    case 'Tab':
+      if (key.shiftKey) shiftTabInCodeBlockCommand(view);
+      else tabInCodeBlockCommand(view);
+      return;
+    default:
+      return;
+  }
+}
+
+function replayMacroAction(
+  view: EditorView,
+  action: MacroAction,
+  clipboard: { current: string },
+): void {
+  if (action.kind === 'text') {
+    replaceSelection(view, action.text);
+    return;
+  }
+  replayMacroKey(view, action.key, clipboard);
 }
 
 /** 受け付ける画像 MIME プレフィックスと拡張子マップ */
@@ -309,6 +552,18 @@ export interface EditorHandle {
     replacement: string,
     options?: { caseSensitive?: boolean },
   ): number;
+  /** キーマクロ記録を開始する。既存の記録はクリアされる。 */
+  startKeyMacroCapture(): void;
+  /** キーマクロ記録を終了する。 */
+  stopKeyMacroCapture(): void;
+  /** 記録済みのキーマクロを再生する。 */
+  playKeyMacro(): void;
+  /** 記録済みのキーマクロを表示用文字列として返す。 */
+  getKeyMacroDisplay(): string[];
+  /** 記録済みのキーマクロを保存用データとして返す。 */
+  getKeyMacroActions(): MacroAction[];
+  /** 保存済みのキーマクロを現在の再生対象としてセットする。 */
+  setKeyMacroActions(actions: MacroAction[]): void;
   focus(): void;
   /**
    * CodeMirror が実際にスクロールしている DOM 要素を返す。
@@ -330,9 +585,30 @@ const Editor = forwardRef<EditorHandle, Props>(function Editor(
   onFocusChangeRef.current = onFocusChange;
   const onScrollRef = useRef(onScroll);
   onScrollRef.current = onScroll;
+  const macroRecordingRef = useRef(false);
+  const macroPlayingRef = useRef(false);
+  const macroActionsRef = useRef<MacroAction[]>([]);
+  const suppressNextTextMacroRef = useRef(false);
+  const composingMacroRef = useRef(false);
+  const composingMacroTextRef = useRef('');
+  const lastDeleteKeyRecordRef = useRef(0);
+  const macroClipboardRef = useRef('');
+  const macroNoticeTimerRef = useRef<number | null>(null);
   // CodeMirror の scrollDOM。mount 直後に setState することで Minimap の
   // useEffect (scrollEl deps) が反応できるようにする。
   const [scrollHost, setScrollHost] = useState<HTMLElement | null>(null);
+  const [macroNotice, setMacroNotice] = useState<string | null>(null);
+
+  const showMacroNotice = (message: string) => {
+    if (macroNoticeTimerRef.current !== null) {
+      window.clearTimeout(macroNoticeTimerRef.current);
+    }
+    setMacroNotice(message);
+    macroNoticeTimerRef.current = window.setTimeout(() => {
+      setMacroNotice(null);
+      macroNoticeTimerRef.current = null;
+    }, 1000);
+  };
 
   // 初回マウント時にのみ EditorView を生成
   useEffect(() => {
@@ -392,6 +668,102 @@ const Editor = forwardRef<EditorHandle, Props>(function Editor(
       },
     });
 
+    const macroHandlers = EditorView.domEventHandlers({
+      compositionstart: () => {
+        if (macroRecordingRef.current && !macroPlayingRef.current) {
+          composingMacroRef.current = true;
+          composingMacroTextRef.current = '';
+        }
+        return false;
+      },
+      compositionend: (event) => {
+        const text =
+          event.data.length > 0 ? event.data : composingMacroTextRef.current;
+        if (
+          macroRecordingRef.current &&
+          !macroPlayingRef.current &&
+          text.length > 0
+        ) {
+          macroActionsRef.current.push({
+            kind: 'text',
+            text,
+          });
+          suppressNextTextMacroRef.current = true;
+        }
+        composingMacroRef.current = false;
+        composingMacroTextRef.current = '';
+        return false;
+      },
+      beforeinput: (event) => {
+        if (!macroRecordingRef.current || macroPlayingRef.current) {
+          return false;
+        }
+        const key = macroKeyFromInputType(event.inputType);
+        if (!key) return false;
+        const now = Date.now();
+        if (now - lastDeleteKeyRecordRef.current > 100) {
+          macroActionsRef.current.push({ kind: 'key', key });
+          lastDeleteKeyRecordRef.current = now;
+          suppressNextTextMacroRef.current = true;
+        }
+        return false;
+      },
+      keydown: (event, view) => {
+        suppressNextTextMacroRef.current = false;
+        if (event.key === 'F2') {
+          macroActionsRef.current = [];
+          macroRecordingRef.current = true;
+          showMacroNotice('マクロ記録開始');
+          event.preventDefault();
+          return true;
+        }
+        if (event.key === 'F3') {
+          macroRecordingRef.current = false;
+          showMacroNotice('マクロ記録終了');
+          event.preventDefault();
+          return true;
+        }
+        if (event.key === 'F1') {
+          if (!macroRecordingRef.current && !macroPlayingRef.current) {
+            macroPlayingRef.current = true;
+            try {
+              for (const action of macroActionsRef.current) {
+                replayMacroAction(view, action, macroClipboardRef);
+              }
+            } finally {
+              macroPlayingRef.current = false;
+              view.focus();
+            }
+          }
+          event.preventDefault();
+          return true;
+        }
+        if (
+          macroRecordingRef.current &&
+          !macroPlayingRef.current &&
+          shouldRecordMacroKey(event)
+        ) {
+          const now = Date.now();
+          if (
+            (event.key === 'Backspace' || event.key === 'Delete') &&
+            now - lastDeleteKeyRecordRef.current <= 100
+          ) {
+            suppressNextTextMacroRef.current = true;
+            return false;
+          }
+          macroActionsRef.current.push({
+            kind: 'key',
+            key: macroKeyFromEvent(event),
+          });
+          if (event.key === 'Backspace' || event.key === 'Delete') {
+            lastDeleteKeyRecordRef.current = now;
+          }
+          suppressNextTextMacroRef.current = true;
+        }
+        return false;
+      },
+    });
+
     const state = EditorState.create({
       doc: value,
       extensions: [
@@ -411,8 +783,28 @@ const Editor = forwardRef<EditorHandle, Props>(function Editor(
         EditorView.lineWrapping,
         focusHandlers,
         dragHandlers,
+        Prec.high(macroHandlers),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
+            if (macroRecordingRef.current && !macroPlayingRef.current) {
+              if (suppressNextTextMacroRef.current) {
+                suppressNextTextMacroRef.current = false;
+              } else if (composingMacroRef.current) {
+                update.changes.iterChanges((_fromA, _toA, _fromB, _toB, inserted) => {
+                  const text = inserted.toString();
+                  if (text.length > 0) {
+                    composingMacroTextRef.current = text;
+                  }
+                });
+              } else {
+                update.changes.iterChanges((_fromA, _toA, _fromB, _toB, inserted) => {
+                  const text = inserted.toString();
+                  if (text.length > 0) {
+                    macroActionsRef.current.push({ kind: 'text', text });
+                  }
+                });
+              }
+            }
             onChangeRef.current(update.state.doc.toString());
           }
         }),
@@ -471,6 +863,10 @@ const Editor = forwardRef<EditorHandle, Props>(function Editor(
 
     return () => {
       cancelAnimationFrame(focusRaf);
+      if (macroNoticeTimerRef.current !== null) {
+        window.clearTimeout(macroNoticeTimerRef.current);
+        macroNoticeTimerRef.current = null;
+      }
       host.removeEventListener('mousedown', hostClick);
       scrollDom.removeEventListener('scroll', scrollHandler);
       view.destroy();
@@ -690,6 +1086,61 @@ const Editor = forwardRef<EditorHandle, Props>(function Editor(
         return changes.length;
       },
 
+      startKeyMacroCapture() {
+        const view = viewRef.current;
+        if (!view) return;
+        macroActionsRef.current = [];
+        suppressNextTextMacroRef.current = false;
+        composingMacroRef.current = false;
+        composingMacroTextRef.current = '';
+        lastDeleteKeyRecordRef.current = 0;
+        macroRecordingRef.current = true;
+        showMacroNotice('マクロ記録開始');
+        view.focus();
+      },
+
+      stopKeyMacroCapture() {
+        macroRecordingRef.current = false;
+        showMacroNotice('マクロ記録終了');
+        viewRef.current?.focus();
+      },
+
+      playKeyMacro() {
+        const view = viewRef.current;
+        if (!view || macroRecordingRef.current || macroPlayingRef.current) {
+          return;
+        }
+        macroPlayingRef.current = true;
+        try {
+          for (const action of macroActionsRef.current) {
+            replayMacroAction(view, action, macroClipboardRef);
+          }
+        } finally {
+          macroPlayingRef.current = false;
+          view.focus();
+        }
+      },
+
+      getKeyMacroDisplay() {
+        return macroActionsRef.current.map(formatMacroAction);
+      },
+
+      getKeyMacroActions() {
+        return macroActionsRef.current.map((action) =>
+          action.kind === 'text'
+            ? { kind: 'text', text: action.text }
+            : { kind: 'key', key: { ...action.key } },
+        );
+      },
+
+      setKeyMacroActions(actions) {
+        macroActionsRef.current = actions.map((action) =>
+          action.kind === 'text'
+            ? { kind: 'text', text: action.text }
+            : { kind: 'key', key: { ...action.key } },
+        );
+      },
+
       focus() {
         viewRef.current?.focus();
       },
@@ -704,6 +1155,11 @@ const Editor = forwardRef<EditorHandle, Props>(function Editor(
   return (
     <div className="editor-pane">
       <div ref={hostRef} className="editor" />
+      {macroNotice && (
+        <div className="editor-macro-notice" role="status">
+          {macroNotice}
+        </div>
+      )}
       {showMinimap && <Minimap text={value} scrollEl={scrollHost} />}
     </div>
   );

@@ -449,6 +449,12 @@ export interface InkNelApi {
   onCreateNote(callback: () => void): () => void;
   onFind(callback: () => void): () => void;
   onReplace(callback: () => void): () => void;
+  onMacroCaptureStart(callback: () => void): () => void;
+  onMacroCaptureStop(callback: () => void): () => void;
+  onMacroPlay(callback: () => void): () => void;
+  onMacroShow(callback: () => void): () => void;
+  onMacroSelect(callback: (id: string) => void): () => void;
+  updateMacroMenu(macros: Array<{ id: string; name: string }>): void;
   onImportMd(callback: () => void): () => void;
   onImportDir(callback: () => void): () => void;
   notes: NotesApi;
