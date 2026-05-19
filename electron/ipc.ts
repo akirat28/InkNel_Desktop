@@ -1893,7 +1893,7 @@ export function registerIpc(): void {
         const pdf = await win.webContents.printToPDF({
           printBackground: true,
           pageSize: 'A4',
-          margins: { marginType: 'default' },
+          preferCSSPageSize: true,
         });
         writeFileSync(result.filePath, pdf);
         return true;

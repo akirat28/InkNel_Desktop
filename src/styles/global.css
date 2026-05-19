@@ -2890,6 +2890,10 @@ body,
   display: block;
 }
 
+[data-theme='light'] .tab-bar__action-btn--icon {
+  color: #000;
+}
+
 .tab {
   flex-shrink: 0;
   display: flex;
@@ -7469,6 +7473,26 @@ body,
  * ノート本文（プレビュー or エディタ）だけが印刷されるようにする。
  */
 @media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  :root {
+    --bg: #ffffff;
+    --bg-elevated: #f3f3f3;
+    --bg-deep: #ebebeb;
+    --fg: #1e1e1e;
+    --fg-muted: #6b7280;
+    --accent: #0969da;
+    --accent-soft: rgba(9, 105, 218, 0.14);
+    --accent-soft-2: rgba(9, 105, 218, 0.06);
+    --border: #d0d7de;
+    --hover: rgba(0, 0, 0, 0.05);
+    --hover-strong: rgba(0, 0, 0, 0.08);
+    --shadow: rgba(0, 0, 0, 0.18);
+  }
+
   html,
   body,
   #root,
@@ -7505,10 +7529,14 @@ body,
 
   /* プレビュー本体: 印刷用に色やパディングを調整 */
   .preview {
-    padding: 0 !important;
+    padding: 12.7mm 12.7mm 14mm !important;
     margin: 0 !important;
     background: #fff !important;
+    -webkit-box-decoration-break: clone !important;
+    box-decoration-break: clone !important;
+    box-sizing: border-box !important;
     color: #000 !important;
+    contain: none !important;
     overflow: visible !important;
   }
 
