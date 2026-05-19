@@ -358,6 +358,12 @@ contextBridge.exposeInMainWorld('api', {
             body: string;
           }>;
         };
+        attachments?: Array<{
+          kind: 'image';
+          name: string;
+          mimeType: string;
+          dataUrl: string;
+        }>;
         allowNoteActions?: boolean;
       },
       requestId?: string,

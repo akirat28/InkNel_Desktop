@@ -280,6 +280,12 @@ export interface AiChatInput {
    * AI 側に許可する。false（チャットモード）では普通の会話のみ。
    */
   allowNoteActions?: boolean;
+  attachments?: Array<{
+    kind: 'image';
+    name: string;
+    mimeType: string;
+    dataUrl: string;
+  }>;
 }
 
 export interface AiApi {

@@ -145,6 +145,13 @@ interface AiChatMessage {
   content: string;
 }
 
+interface AiChatAttachment {
+  kind: 'image';
+  name: string;
+  mimeType: string;
+  dataUrl: string;
+}
+
 interface AiChatInput {
   provider: AiProvider;
   token: string;
@@ -168,6 +175,7 @@ interface AiChatInput {
    * 会話のみで、ノートには手を触れない。
    */
   allowNoteActions?: boolean;
+  attachments?: AiChatAttachment[];
 }
 
 function buildAiInstruction(action: AiAction): string {
@@ -520,6 +528,52 @@ function buildChatSystemPrompt(input: AiChatInput): string {
   return sections.join('\n').slice(0, MAX_AI_INPUT_CHARS);
 }
 
+function dataUrlToBase64(dataUrl: string): string {
+  const comma = dataUrl.indexOf(',');
+  return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+}
+
+function getChatAttachments(input: AiChatInput): AiChatAttachment[] {
+  return (input.attachments ?? []).filter(
+    (a) =>
+      a.kind === 'image' &&
+      /^image\//.test(a.mimeType) &&
+      a.dataUrl.startsWith('data:image/'),
+  );
+}
+
+function buildOpenAiChatContent(
+  text: string,
+  attachments: AiChatAttachment[],
+): unknown {
+  if (attachments.length === 0) return text;
+  return [
+    { type: 'text', text },
+    ...attachments.map((a) => ({
+      type: 'image_url',
+      image_url: { url: a.dataUrl },
+    })),
+  ];
+}
+
+function buildAnthropicChatContent(
+  text: string,
+  attachments: AiChatAttachment[],
+): unknown {
+  if (attachments.length === 0) return text;
+  return [
+    { type: 'text', text },
+    ...attachments.map((a) => ({
+      type: 'image',
+      source: {
+        type: 'base64',
+        media_type: a.mimeType,
+        data: dataUrlToBase64(a.dataUrl),
+      },
+    })),
+  ];
+}
+
 /**
  * Response.body から `data: ...\n\n` 形式の SSE フレームを 1 件ずつ yield する。
  * fetch が返す ReadableStream<Uint8Array> を UTF-8 デコードしてバッファし、
@@ -570,7 +624,13 @@ async function chatWithOpenAiCompatible(
       stream: true,
       messages: [
         { role: 'system', content: buildChatSystemPrompt(input) },
-        ...input.messages.map((m) => ({ role: m.role, content: m.content })),
+        ...input.messages.map((m, index) => ({
+          role: m.role,
+          content:
+            m.role === 'user' && index === input.messages.length - 1
+              ? buildOpenAiChatContent(m.content, getChatAttachments(input))
+              : m.content,
+        })),
       ],
     }),
   });
@@ -626,9 +686,12 @@ async function chatWithAnthropic(
       temperature: 0.3,
       stream: true,
       system: buildChatSystemPrompt(input),
-      messages: input.messages.map((m) => ({
+      messages: input.messages.map((m, index) => ({
         role: m.role === 'assistant' ? 'assistant' : 'user',
-        content: m.content,
+        content:
+          m.role === 'user' && index === input.messages.length - 1
+            ? buildAnthropicChatContent(m.content, getChatAttachments(input))
+            : m.content,
       })),
     }),
   });
@@ -687,10 +750,23 @@ async function chatWithGemini(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: buildChatSystemPrompt(input) }] },
-      contents: input.messages.map((m) => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }],
-      })),
+      contents: input.messages.map((m, index) => {
+        const parts: Array<unknown> = [{ text: m.content }];
+        if (m.role === 'user' && index === input.messages.length - 1) {
+          for (const attachment of getChatAttachments(input)) {
+            parts.push({
+              inlineData: {
+                mimeType: attachment.mimeType,
+                data: dataUrlToBase64(attachment.dataUrl),
+              },
+            });
+          }
+        }
+        return {
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts,
+        };
+      }),
       generationConfig: { temperature: 0.3 },
     }),
   });

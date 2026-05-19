@@ -13,6 +13,7 @@ import {
 } from '../settings';
 import { useT } from '../i18n';
 import type { NoteMeta } from '../global';
+import { extractPdfText } from '../utils/pdfText';
 
 interface Props {
   onClose: () => void;
@@ -144,6 +145,16 @@ interface ChatMessage {
   text: string;
 }
 
+interface AiChatAttachment {
+  id: string;
+  name: string;
+  kind: 'pdf' | 'image';
+  mimeType: string;
+  size: number;
+  text?: string;
+  dataUrl?: string;
+}
+
 function getActiveModelName(settings: AppSettings): string {
   const m = getActiveAiSettings(settings).model.trim();
   if (m) return m;
@@ -205,6 +216,47 @@ function buildMarkdownFromMessages(
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
 }
 
+function formatBytes(size: number): string {
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  if (size >= 1024) return `${Math.ceil(size / 1024)} KB`;
+  return `${size} B`;
+}
+
+function makeLocalId(prefix: string): string {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? `${prefix}-${crypto.randomUUID()}`
+    : `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function arrayBufferToDataUrl(buffer: ArrayBuffer, mimeType: string): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+function buildAttachmentContext(attachments: AiChatAttachment[]): string {
+  const sections = attachments
+    .filter((a) => a.kind === 'pdf')
+    .map((a) => {
+      const text = a.text?.trim();
+      return [
+        `--- PDF: ${a.name} (${formatBytes(a.size)}) ---`,
+        text || '(PDFからテキストを抽出できませんでした)',
+      ].join('\n');
+    });
+  if (sections.length === 0) return '';
+  return [
+    '=== ドロップされたPDFの内容 (InkNelには保存せず、このチャット内だけで参照) ===',
+    ...sections,
+    '=== PDF内容ここまで ===',
+    '回答では上記PDF内容を根拠として扱ってください。',
+  ].join('\n\n');
+}
+
 export default function AiChatPanel({
   onClose,
   settings,
@@ -227,6 +279,8 @@ export default function AiChatPanel({
   const [chatMode, setChatMode] = useState<'chat' | 'edit'>('chat');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
+  const [attachments, setAttachments] = useState<AiChatAttachment[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
   // ノート化処理中フラグ（多重送信を防止）
   const [savingNote, setSavingNote] = useState(false);
   // メッセージリスト DOM への参照。新着メッセージや AI ストリーミング更新時に
@@ -347,7 +401,7 @@ export default function AiChatPanel({
 
   const handleSubmit = async () => {
     const text = draft.trim();
-    if (!text || busy) return;
+    if ((!text && attachments.length === 0) || busy) return;
     const aiActive = getActiveAiSettings(settings);
     if (!aiActive.token.trim()) {
       setMessages((prev) => [
@@ -373,14 +427,25 @@ export default function AiChatPanel({
       return;
     }
     const now = Date.now();
+    const visibleUserText =
+      attachments.length > 0
+        ? [
+            text || '添付ファイルを参照してください。',
+            '',
+            ...attachments.map(
+              (a) =>
+                `[添付: ${a.kind === 'pdf' ? 'PDF' : '画像'}] ${a.name} (${formatBytes(a.size)})`,
+            ),
+          ].join('\n')
+        : text;
     const nextMessages: ChatMessage[] = [
       ...messages,
-      { id: `u-${now}`, role: 'user', text },
+      { id: `u-${now}`, role: 'user', text: visibleUserText },
     ];
     setMessages(nextMessages);
     // 履歴に追加（直前と同じ内容は重複追加しない）
     const hist = historyRef.current;
-    if (hist[hist.length - 1] !== text) {
+    if (text && hist[hist.length - 1] !== text) {
       hist.push(text);
       if (hist.length > HISTORY_MAX) hist.splice(0, hist.length - HISTORY_MAX);
     }
@@ -432,7 +497,7 @@ export default function AiChatPanel({
       // これがないと AI は URL 文字列だけ見て、ノート本文や履歴を頼りに
       // 推測してしまい「指定 URL ではなく前回内容を要約する」現象が起きる。
       const detectedUrls = extractUrls(text);
-      let augmentedLastUserContent = text;
+      let augmentedLastUserContent = text || '添付ファイルを参照してください。';
       if (detectedUrls.length > 0) {
         // 取得中は placeholder を進捗表示に切り替えてユーザーへフィードバック。
         // ai:chat-chunk が来始めたら rawAccum に上書きされる想定だが、
@@ -477,6 +542,14 @@ export default function AiChatPanel({
         );
         augmentedLastUserContent = sections.join('\n');
       }
+      const attachmentContext = buildAttachmentContext(attachments);
+      if (attachmentContext) {
+        augmentedLastUserContent = [
+          augmentedLastUserContent,
+          '',
+          attachmentContext,
+        ].join('\n');
+      }
       // basePrompt は空文字なら送らない（main 側でも trim チェックしている）
       const basePrompt = aiActive.basePrompt.trim();
       const allowNoteActions = chatMode === 'edit';
@@ -499,6 +572,14 @@ export default function AiChatPanel({
             body: noteBody,
             relatedNotes,
           },
+          attachments: attachments
+            .filter((a) => a.kind === 'image' && a.dataUrl)
+            .map((a) => ({
+              kind: 'image' as const,
+              name: a.name,
+              mimeType: a.mimeType,
+              dataUrl: a.dataUrl!,
+            })),
           allowNoteActions,
         },
         requestId,
@@ -724,8 +805,76 @@ export default function AiChatPanel({
     if (!window.confirm('現在のチャット履歴をすべて削除しますか?')) return;
     setMessages([]);
     setDraft('');
+    setAttachments([]);
     historyIndexRef.current = -1;
     draftBufferRef.current = '';
+  };
+
+  const addDroppedFiles = async (files: FileList | File[]) => {
+    const dropped = Array.from(files);
+    if (dropped.length === 0) return;
+    const supported = dropped.filter(
+      (file) =>
+        file.type.startsWith('image/') ||
+        file.type === 'application/pdf' ||
+        file.name.toLowerCase().endsWith('.pdf'),
+    );
+    const unsupportedCount = dropped.length - supported.length;
+    if (unsupportedCount > 0) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeLocalId('e'),
+          role: 'assistant',
+          text: `未対応のファイル ${unsupportedCount} 件をスキップしました。PDFまたは画像をドロップしてください。`,
+        },
+      ]);
+    }
+    for (const file of supported) {
+      try {
+        const buffer = await file.arrayBuffer();
+        const isPdf =
+          file.type === 'application/pdf' ||
+          file.name.toLowerCase().endsWith('.pdf');
+        if (isPdf) {
+          const text = await extractPdfText(buffer);
+          setAttachments((prev) => [
+            ...prev,
+            {
+              id: makeLocalId('att'),
+              name: file.name,
+              kind: 'pdf',
+              mimeType: 'application/pdf',
+              size: file.size,
+              text,
+            },
+          ]);
+        } else {
+          const mimeType = file.type || 'image/png';
+          setAttachments((prev) => [
+            ...prev,
+            {
+              id: makeLocalId('att'),
+              name: file.name,
+              kind: 'image',
+              mimeType,
+              size: file.size,
+              dataUrl: arrayBufferToDataUrl(buffer, mimeType),
+            },
+          ]);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: makeLocalId('e'),
+            role: 'assistant',
+            text: `${file.name} の読み込みに失敗しました: ${message}`,
+          },
+        ]);
+      }
+    }
   };
 
   /** 進行中の AI 要求を中断する。busy 状態は ai.chat() の例外経由で解除される */
@@ -740,6 +889,25 @@ export default function AiChatPanel({
       className={`ai-chat ${collapsed ? 'is-collapsed' : ''}`}
       aria-label={t.aiChat.title}
       aria-hidden={collapsed}
+      onDragEnter={(e) => {
+        e.preventDefault();
+        if (e.dataTransfer.types.includes('Files')) setIsDragOver(true);
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        setIsDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          setIsDragOver(false);
+        }
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setIsDragOver(false);
+        void addDroppedFiles(e.dataTransfer.files);
+      }}
       // リサイズドラッグ中は width のトランジションを切ってカーソルへ即時追従させる
       // CSS 変数で子要素 (.ai-chat__message / .ai-chat__input) のフォントサイズを
       // 設定 (設定 > AI > 共通設定) から動的に上書きする。
@@ -823,6 +991,33 @@ export default function AiChatPanel({
         )}
       </div>
       <div className="ai-chat__composer">
+        {attachments.length > 0 && (
+          <div className="ai-chat__attachments" aria-label="AI添付ファイル">
+            {attachments.map((attachment) => (
+              <span key={attachment.id} className="ai-chat__attachment">
+                <span className="ai-chat__attachment-name">
+                  {attachment.kind === 'pdf' ? 'PDF' : '画像'}: {attachment.name}
+                </span>
+                <span className="ai-chat__attachment-size">
+                  {formatBytes(attachment.size)}
+                </span>
+                <button
+                  type="button"
+                  className="ai-chat__attachment-remove"
+                  onClick={() =>
+                    setAttachments((prev) =>
+                      prev.filter((a) => a.id !== attachment.id),
+                    )
+                  }
+                  aria-label={`${attachment.name} をAI添付から外す`}
+                  title="添付から外す"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div
           className="ai-chat__mode-toggle"
           role="radiogroup"
@@ -901,7 +1096,7 @@ export default function AiChatPanel({
               type="button"
               className="ai-chat__send"
               onClick={() => void handleSubmit()}
-              disabled={draft.trim().length === 0 || busy}
+              disabled={(draft.trim().length === 0 && attachments.length === 0) || busy}
             >
               {busy ? t.aiChat.sending : t.aiChat.send}
             </button>
@@ -919,6 +1114,11 @@ export default function AiChatPanel({
         </div>
       </div>
       </div>{/* ai-chat__inner */}
+      {isDragOver && (
+        <div className="ai-chat__drop-overlay" aria-hidden="true">
+          PDFまたは画像をAIチャットに添付
+        </div>
+      )}
       {pendingNote && (
         <div
           className="modal__backdrop"
