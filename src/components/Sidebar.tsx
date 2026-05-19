@@ -37,6 +37,8 @@ const NOTE_DRAG_TYPE = 'application/x-inknel-note-id';
 /** フォルダパスをやりとりする独自の DataTransfer タイプ */
 const FOLDER_DRAG_TYPE = 'application/x-inknel-folder-path';
 
+const TREE_CHILDREN_TRANSITION_MS = 200;
+
 interface Props {
   collapsed: boolean;
   width: number;
@@ -1014,7 +1016,7 @@ function TreeView({
                   onDragLeave={onFolderDragLeave}
                   onDrop={(e) => onFolderDrop(e, node.path)}
                 >
-                  <span className="tree__chevron">{open ? '▼' : '▶'}</span>
+                  <span className="tree__chevron">▶</span>
                   <span className="tree__icon">
                     <FolderItemIcon />
                   </span>
@@ -1032,7 +1034,7 @@ function TreeView({
                   <KebabIcon />
                 </button>
               </div>
-              {open && (
+              <TreeChildrenTransition open={open}>
                 <TreeView
                   nodes={node.children}
                   depth={depth + 1}
@@ -1053,7 +1055,7 @@ function TreeView({
                   currentHitId={currentHitId}
                   currentHitFolderPath={currentHitFolderPath}
                 />
-              )}
+              </TreeChildrenTransition>
             </li>
           );
         }
@@ -1153,6 +1155,49 @@ function TreeView({
         );
       })}
     </ul>
+  );
+}
+
+function TreeChildrenTransition({
+  open,
+  children,
+}: {
+  open: boolean;
+  children: React.ReactNode;
+}) {
+  const [shouldRender, setShouldRender] = useState(open);
+  const [visible, setVisible] = useState(open);
+
+  useEffect(() => {
+    if (open) {
+      setShouldRender(true);
+      let innerFrame = 0;
+      const outerFrame = requestAnimationFrame(() => {
+        innerFrame = requestAnimationFrame(() => setVisible(true));
+      });
+      return () => {
+        cancelAnimationFrame(outerFrame);
+        cancelAnimationFrame(innerFrame);
+      };
+    }
+
+    setVisible(false);
+    const timer = setTimeout(
+      () => setShouldRender(false),
+      TREE_CHILDREN_TRANSITION_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [open]);
+
+  if (!shouldRender) return null;
+
+  return (
+    <div
+      className={`tree__children ${visible ? 'is-open' : ''}`}
+      aria-hidden={!open}
+    >
+      <div className="tree__children-inner">{children}</div>
+    </div>
   );
 }
 
