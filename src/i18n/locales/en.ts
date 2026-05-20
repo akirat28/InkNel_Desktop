@@ -137,7 +137,7 @@ const en: Locale = {
     ariaLabel: 'Note tags',
   },
   noteHeader: {
-    preview: 'Preview',
+    preview: 'View',
     livePreview: 'Live Preview',
     edit: 'Edit',
     livePreviewTitle: 'Live Preview (side-by-side: edits sync instantly)',

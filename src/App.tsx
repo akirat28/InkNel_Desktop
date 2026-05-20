@@ -92,7 +92,7 @@ function isMacroAction(value: unknown): value is MacroAction {
   if (action.kind !== 'key' || !action.key || typeof action.key !== 'object') {
     return false;
   }
-  const key = action.key as Record<string, unknown>;
+  const key = action.key as unknown as Record<string, unknown>;
   return (
     typeof key.key === 'string' &&
     typeof key.code === 'string' &&
@@ -511,6 +511,58 @@ export default function App() {
   // 受け取った側で比率を計算して反対側の scrollTop を更新する。
   const mixBodyRef = useRef<HTMLDivElement | null>(null);
   const previewMixRef = useRef<PreviewHandle | null>(null);
+  // ----- MIX モードの左右分割比 (Editor 側の % 値、0-100) -----
+  // ユーザーが境界線をドラッグして変更可能。localStorage に永続化。
+  // 旧バージョンでは 50/50 固定だったため未保存 = 50 を既定値にする。
+  const [mixSplitPercent, setMixSplitPercent] = useState<number>(() => {
+    try {
+      const raw = window.localStorage?.getItem('inknel.mixSplitPercent');
+      const n = raw ? parseFloat(raw) : NaN;
+      if (Number.isFinite(n) && n >= 15 && n <= 85) return n;
+    } catch {
+      /* localStorage 不可環境はデフォルト */
+    }
+    return 50;
+  });
+  const [mixResizing, setMixResizing] = useState(false);
+  // mousemove 中の比率更新。コンテナの絶対座標を基準に Editor 側の幅を %換算。
+  useEffect(() => {
+    if (!mixResizing) return;
+    const handleMove = (e: MouseEvent) => {
+      const el = mixBodyRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const next = ((e.clientX - rect.left) / rect.width) * 100;
+      // 端まで寄せて両方が潰れないよう 15-85% にクランプ
+      const clamped = Math.min(85, Math.max(15, next));
+      setMixSplitPercent(clamped);
+    };
+    const handleUp = () => setMixResizing(false);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [mixResizing]);
+  // 分割比をデバウンスで localStorage へ永続化
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        window.localStorage?.setItem(
+          'inknel.mixSplitPercent',
+          String(mixSplitPercent),
+        );
+      } catch {
+        /* quota / privacy mode */
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [mixSplitPercent]);
   // 片側を programmatic に動かしている間は反対側の scroll コールバックを無視する
   // ガード。requestAnimationFrame の次フレームで自動的に解除。
   const isSyncingScrollRef = useRef(false);
@@ -2860,13 +2912,22 @@ export default function App() {
                   <TagBar tags={editingTags} onChange={handleTagsChange} />
                   <div
                     ref={mixBodyRef}
-                    className={`note__body ${view === 'mix' ? 'note__body--mix' : ''}`}
+                    className={`note__body ${view === 'mix' ? 'note__body--mix' : ''} ${mixResizing ? 'note__body--mix-resizing' : ''}`}
+                    style={
+                      view === 'mix'
+                        ? {
+                            gridTemplateColumns: `${mixSplitPercent}% 6px 1fr`,
+                          }
+                        : undefined
+                    }
                   >
                     {view === 'mix' ? (
                       <>
                         {/* MIX: 左 Editor / 右 Preview。Editor の onChange で
                            即座に body が更新され、右 Preview が再描画される。
-                           onScroll で互いの scrollTop を比率同期する。 */}
+                           onScroll で互いの scrollTop を比率同期する。
+                           中央のリサイザーをドラッグすると分割比 (Editor 側 %) が
+                           更新され、localStorage に永続化される。 */}
                         <Editor
                           ref={editorRef}
                           value={body}
@@ -2875,6 +2936,21 @@ export default function App() {
                           onFocusChange={setEditorFocused}
                           onScroll={handleEditorScroll}
                           showMinimap={settings.editorMinimap}
+                        />
+                        <div
+                          className={`note__body-splitter ${mixResizing ? 'is-active' : ''}`}
+                          role="separator"
+                          aria-orientation="vertical"
+                          aria-label="エディタとプレビューの幅を変更"
+                          aria-valuenow={Math.round(mixSplitPercent)}
+                          aria-valuemin={15}
+                          aria-valuemax={85}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setMixResizing(true);
+                          }}
+                          onDoubleClick={() => setMixSplitPercent(50)}
+                          title="ドラッグで幅を変更 / ダブルクリックで 50:50 に戻す"
                         />
                         <Preview
                           ref={previewMixRef}

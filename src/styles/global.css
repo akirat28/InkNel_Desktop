@@ -3179,19 +3179,49 @@ body,
   min-height: 0;
 }
 
-/* MIX モード: 左 Editor / 右 Preview の左右分割 */
+/* MIX モード: 左 Editor / 中央 splitter / 右 Preview の左右分割。
+   grid-template-columns は inline style で `${%} 6px 1fr` を指定して
+   ユーザーがドラッグで動かせるようにする。 */
 .note__body--mix {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* デフォルト値 (inline style で上書きされる) */
+  grid-template-columns: 1fr 6px 1fr;
 }
 
 .note__body--mix > .editor-pane {
-  border-right: 1px solid var(--border);
   min-width: 0;
 }
 
 .note__body--mix > .preview {
   min-width: 0;
+}
+
+/* リサイザー本体: 6px 幅の縦長帯。ホバー / ドラッグ中は色が強く出る */
+.note__body-splitter {
+  cursor: col-resize;
+  background: var(--border);
+  position: relative;
+  user-select: none;
+  transition: background 0.12s ease;
+  /* タップ判定を少し広げる */
+  margin: 0;
+}
+
+.note__body-splitter::before {
+  /* クリック判定を 6px 帯の左右に少し広げるための見えない拡張領域 */
+  content: '';
+  position: absolute;
+  inset: 0 -3px;
+}
+
+.note__body-splitter:hover,
+.note__body-splitter.is-active {
+  background: var(--accent);
+}
+
+/* ドラッグ中はカーソルを全画面で col-resize にし、テキスト選択も抑止 */
+.note__body--mix-resizing {
+  cursor: col-resize;
 }
 
 /* editor と minimap を横並びにする外側ラッパ */

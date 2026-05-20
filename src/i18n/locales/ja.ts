@@ -137,7 +137,7 @@ const ja: Locale = {
     ariaLabel: 'ノートのタグ',
   },
   noteHeader: {
-    preview: 'プレビュー',
+    preview: 'ビュー',
     livePreview: 'ライブ',
     edit: '編集',
     livePreviewTitle: 'ライブプレビュー（左右分割で編集が即時反映）',
