@@ -447,17 +447,30 @@ const Preview = forwardRef<PreviewHandle, Props>(function Preview(
     return () => el.removeEventListener('scroll', handler);
   }, []);
   const pluginTheme: 'dark' | 'light' = theme === 'light' ? 'light' : 'dark';
+  // プラグインが本文を編集する用 (例: マインドマップ) に getBody/setBody を渡す。
+  // ref 経由で最新値を返し、毎回新しい関数参照にしない (useEffect の依存安定化)。
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
   useEffect(() => {
     if (activePlugins.length === 0) return;
     const root = previewRef.current;
     if (!root) return;
     let cancelled = false;
+    const ctx = {
+      theme: pluginTheme,
+      getBody: () => valueRef.current,
+      setBody: onChange
+        ? (next: string) => onChangeRef.current?.(next)
+        : undefined,
+    };
     void (async () => {
       for (const plugin of activePlugins) {
         if (cancelled) return;
         try {
           plugin.module.resetInPreview?.(root);
-          await plugin.module.renderInPreview?.(root, { theme: pluginTheme });
+          await plugin.module.renderInPreview?.(root, ctx);
         } catch (err) {
           console.error(
             `[plugin:${plugin.id}] renderInPreview failed`,
@@ -469,7 +482,7 @@ const Preview = forwardRef<PreviewHandle, Props>(function Preview(
     return () => {
       cancelled = true;
     };
-  }, [html, activePlugins, pluginTheme]);
+  }, [html, activePlugins, pluginTheme, onChange]);
 
   // ----- ライトボックス（クリックで拡大表示） -----
   const [zoomedSrc, setZoomedSrc] = useState<string | null>(null);

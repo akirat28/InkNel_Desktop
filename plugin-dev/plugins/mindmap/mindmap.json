@@ -1,0 +1,10 @@
+{
+  "id": "mindmap",
+  "name": "Mindmap",
+  "version": "1.0.0",
+  "description": "```mindmap コードブロックを、ビューから直接編集可能なマインドマップとして描画します。ノードのクリック編集、子/兄弟ノードの追加、削除、ドラッグ&ドロップでの付け替え、拡大縮小に対応します。",
+  "author": "InkNel",
+  "homepage": "https://inknel.ary-ap.com/plugins/mindmap",
+  "entry": "mindmap/mindmap.js",
+  "files": ["mindmap/mindmap.js"]
+}

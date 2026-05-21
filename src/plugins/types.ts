@@ -22,6 +22,18 @@ export interface PluginManifest {
 export interface PluginRenderContext {
   /** 現在の UI テーマ。テーマ追従するプラグイン用 */
   theme: 'dark' | 'light';
+  /**
+   * 現在のノート本文を返す (Markdown 全文)。
+   * プラグインが本文中のブロックを書き換える用途で参照する。
+   * Preview からの利用前提なので毎回最新の値を返すクロージャ。
+   */
+  getBody?: () => string;
+  /**
+   * ノート本文を書き換える。引数は新しい Markdown 全文。
+   * 例えばマインドマップなど「ビューで編集 → 本文反映」したいプラグインが使う。
+   * Preview に onChange が渡っていない時は undefined。
+   */
+  setBody?: (next: string) => void;
 }
 
 export interface PluginFenceArgs {
