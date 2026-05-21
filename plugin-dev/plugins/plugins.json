@@ -12,6 +12,10 @@
     {
       "id": "mindmap",
       "manifest": "mindmap/mindmap.json"
+    },
+    {
+      "id": "math",
+      "manifest": "math/math.json"
     }
   ]
 }

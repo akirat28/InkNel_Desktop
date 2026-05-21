@@ -1,0 +1,10 @@
+{
+  "id": "math",
+  "name": "Math (TeX)",
+  "version": "1.0.0",
+  "description": "```math コードブロックを TeX 記法で記述すると、KaTeX で数式として描画します。初回プレビュー時に KaTeX を CDN から動的に読み込みます。エディタツールバーから雛形を挿入可能。",
+  "author": "InkNel",
+  "homepage": "https://inknel.ary-ap.com/plugins/math",
+  "entry": "math/math.js",
+  "files": ["math/math.js"]
+}

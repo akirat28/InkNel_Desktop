@@ -5152,7 +5152,8 @@ body,
 }
 
 /* エラー表示 */
-.preview .mermaid-block__error {
+.preview .mermaid-block__error,
+.preview .math-block__error {
   margin: 0;
   padding: 8px 12px;
   background: var(--danger-soft);
@@ -5161,6 +5162,23 @@ body,
   font-size: 12px;
   text-align: left;
   white-space: pre-wrap;
+}
+
+/* 数式ブロック: 上下に少し余白。
+   overflow は visible のままにし、横スクロールバーは出さない。
+   非常に長い数式が稀に出る場合のみ折り返しを許可する形にする
+   (KaTeX 既定の text-align: center + inline-block で短い式でも
+   微妙な overflow を検出して auto がスクロールバーを出してしまうため)。 */
+.preview .math-block {
+  margin: 12px 0;
+  overflow: hidden;
+  text-align: center;
+}
+/* 万一極端に長い式が来た時のフェイルセーフ: KaTeX 側で改行可にする */
+.preview .math-block .katex-display {
+  margin: 0;
+  white-space: normal;
+  word-break: keep-all;
 }
 
 /* ---------- AI 設定パネル ---------- */
