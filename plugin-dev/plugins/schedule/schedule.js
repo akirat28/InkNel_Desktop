@@ -38,9 +38,10 @@ function minToTime(min) {
 }
 
 function parseLine(line) {
+  // 1) 時間部分だけ厳密に抽出し、残り (内容 | 場所 | 色) は split で扱う
   const m = line
     .trim()
-    .match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*\|\s*([^|]*?)(?:\s*\|\s*(.*))?$/);
+    .match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*\|\s*(.*)$/);
   if (!m) return null;
   const h1 = parseInt(m[1], 10);
   const h2 = parseInt(m[3], 10);
@@ -48,12 +49,24 @@ function parseLine(line) {
   const start = `${String(h1).padStart(2, '0')}:${m[2]}`;
   const end = `${String(h2).padStart(2, '0')}:${m[4]}`;
   if (timeToMin(end) <= timeToMin(start)) return null;
-  return {
-    start,
-    end,
-    title: (m[5] ?? '').trim(),
-    location: (m[6] ?? '').trim(),
-  };
+  const rest = m[5] ?? '';
+  const parts = rest.split('|').map((s) => s.trim());
+  const title = parts[0] ?? '';
+  const location = parts[1] ?? '';
+  const colorRaw = parts[2] ?? '';
+  const color = /^#[0-9a-fA-F]{3,8}$/.test(colorRaw) ? colorRaw : '';
+  // コメントはパイプ・改行を含み得るので URL エンコードで永続化する。
+  // 旧形式 (コメント無し) はそのまま空文字。
+  const commentRaw = parts[3] ?? '';
+  let comment = '';
+  if (commentRaw) {
+    try {
+      comment = decodeURIComponent(commentRaw);
+    } catch {
+      comment = commentRaw;
+    }
+  }
+  return { start, end, title, location, color, comment };
 }
 
 function parseSource(src) {
@@ -71,8 +84,18 @@ function serialize(events) {
   return (
     events
       .map((e) => {
-        const loc = e.location ? ` | ${e.location}` : ' |';
-        return `${e.start}-${e.end} | ${e.title || '無題'}${loc}`;
+        const title = e.title || '無題';
+        const loc = e.location || '';
+        const color = e.color || '';
+        // コメントは pipe / 改行を含み得るので URL エンコード
+        const comment = e.comment ? encodeURIComponent(e.comment) : '';
+        // 末尾の空フィールドは省略するが、間に値があれば前のフィールドが空でも出力する
+        if (comment)
+          return `${e.start}-${e.end} | ${title} | ${loc} | ${color} | ${comment}`;
+        if (color)
+          return `${e.start}-${e.end} | ${title} | ${loc} | ${color}`;
+        if (loc) return `${e.start}-${e.end} | ${title} | ${loc}`;
+        return `${e.start}-${e.end} | ${title} |`;
       })
       .join('\n') + '\n'
   );
@@ -266,9 +289,19 @@ function ensureStyle() {
 .schedule-form h4 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--fg, #eee); }
 .schedule-form-row { display: grid; grid-template-columns: 80px 1fr; gap: 8px; margin-bottom: 8px; align-items: center; }
 .schedule-form-row label { font-size: 12px; color: var(--fg-muted, #aaa); }
-.schedule-form-row input { width: 100%; height: 28px; padding: 0 8px; background: var(--bg, #1e1e1e); color: var(--fg, #eee); border: 1px solid var(--border, #555); border-radius: 4px; font-family: inherit; font-size: 12px; outline: none; box-sizing: border-box; }
-.schedule-form-row input:focus { border-color: var(--accent, #569cd6); }
+.schedule-form-row input, .schedule-form-row textarea { width: 100%; padding: 6px 8px; background: var(--bg, #1e1e1e); color: var(--fg, #eee); border: 1px solid var(--border, #555); border-radius: 4px; font-family: inherit; font-size: 12px; outline: none; box-sizing: border-box; }
+.schedule-form-row input { height: 28px; padding: 0 8px; }
+.schedule-form-row textarea { resize: vertical; min-height: 56px; line-height: 1.4; }
+.schedule-form-row input:focus, .schedule-form-row textarea:focus { border-color: var(--accent, #569cd6); }
+.schedule-form-row--align-start { align-items: start; }
+.schedule-form-row--align-start label { padding-top: 4px; }
 .schedule-time-range { display: flex; gap: 8px; align-items: center; }
+/* カラーパレット (8 色プリセット) */
+.schedule-color-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.schedule-color-swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; flex-shrink: 0; }
+.schedule-color-swatch:hover { transform: scale(1.1); }
+.schedule-color-swatch.is-active { border-color: var(--fg, #fff); box-shadow: 0 0 0 2px rgba(0,0,0,0.5) inset; }
+.schedule-color-swatch--default { background: var(--accent, #569cd6); }
 /* カスタム TimePicker: 時 / 分 を 2 つの select として並べる */
 .schedule-timepicker { display: inline-flex; align-items: center; gap: 4px; background: var(--bg, #1e1e1e); border: 1px solid var(--border, #555); border-radius: 4px; padding: 2px 6px; }
 .schedule-timepicker:focus-within { border-color: var(--accent, #569cd6); }
@@ -355,6 +388,8 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
           end: minToTime(startMin + 60),
           title: '',
           location: '',
+          color: '',
+          comment: '',
         });
       });
     } else {
@@ -385,6 +420,10 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
       el.className = 'schedule-event';
       el.style.top = top + 'px';
       el.style.height = height + 'px';
+      // 色指定があれば背景に適用 (無ければ CSS デフォルトの accent)
+      if (ev.color) {
+        el.style.background = ev.color;
+      }
       // レーン配置: 単独なら全幅、重なりがあれば等幅で横並び
       const total = p?.totalLanes || 1;
       const lane = p?.lane || 0;
@@ -520,6 +559,8 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
           end: ev2.end,
           title: ev2.title,
           location: ev2.location,
+          color: ev2.color || '',
+          comment: ev2.comment || '',
         });
       }
     };
@@ -574,6 +615,60 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
     locInput.value = initial.location;
     locRow.append(locLabel, locInput);
 
+    // 色 (8 色プリセット + カスタム + デフォルト)
+    const colorRow = document.createElement('div');
+    colorRow.className = 'schedule-form-row';
+    const colorLabel = document.createElement('label');
+    colorLabel.textContent = '色';
+    const colorWrap = document.createElement('div');
+    colorWrap.className = 'schedule-color-row';
+    const PRESETS = [
+      { value: '', cls: 'schedule-color-swatch--default', title: 'デフォルト' },
+      { value: '#e74c3c', title: '赤' },
+      { value: '#f39c12', title: 'オレンジ' },
+      { value: '#f1c40f', title: '黄' },
+      { value: '#2ecc71', title: '緑' },
+      { value: '#1abc9c', title: 'ティール' },
+      { value: '#9b59b6', title: '紫' },
+      { value: '#95a5a6', title: 'グレー' },
+    ];
+    let chosenColor = initial.color || '';
+    const swatchEls = [];
+    function syncActive() {
+      for (const s of swatchEls) {
+        const v = s.dataset.value;
+        s.classList.toggle('is-active', v === chosenColor);
+      }
+    }
+    for (const p of PRESETS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `schedule-color-swatch ${p.cls ?? ''}`.trim();
+      btn.dataset.value = p.value;
+      btn.title = p.title;
+      if (p.value) btn.style.background = p.value;
+      btn.addEventListener('click', () => {
+        chosenColor = p.value;
+        syncActive();
+      });
+      colorWrap.append(btn);
+      swatchEls.push(btn);
+    }
+    colorRow.append(colorLabel, colorWrap);
+    syncActive();
+
+    // コメント (タイムライン上には表示しない、フォームでのみ編集)
+    const commentRow = document.createElement('div');
+    commentRow.className =
+      'schedule-form-row schedule-form-row--align-start';
+    const commentLabel = document.createElement('label');
+    commentLabel.textContent = 'コメント';
+    const commentInput = document.createElement('textarea');
+    commentInput.rows = 3;
+    commentInput.placeholder = 'メモ / 議題 / 参加者など (タイムラインには表示されません)';
+    commentInput.value = initial.comment || '';
+    commentRow.append(commentLabel, commentInput);
+
     // アクション
     const actions = document.createElement('div');
     actions.className = 'schedule-form-actions';
@@ -595,7 +690,7 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
     }
     actions.append(cancelBtn, saveBtn);
 
-    form.append(heading, timeRow, titleRow, locRow, actions);
+    form.append(heading, timeRow, titleRow, locRow, colorRow, commentRow, actions);
     overlay.append(form);
     blockEl.append(overlay);
 
@@ -626,6 +721,8 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
         end: e2,
         title: titleInput.value.trim() || '無題',
         location: locInput.value.trim(),
+        color: chosenColor,
+        comment: commentInput.value,
       };
       if (initial.mode === 'edit') {
         events[initial.index] = ev;
@@ -638,14 +735,23 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
       close();
     };
     saveBtn.addEventListener('click', save);
-    // Enter で保存、Esc で閉じる
+    // Enter で保存、Esc で閉じる。
+    // ただし以下のケースでは save しない:
+    //   - IME 変換確定の Enter (e.isComposing === true もしくは keyCode 229)
+    //   - textarea にフォーカスがある場合 (改行を許容)
+    //     ただし Cmd/Ctrl+Enter なら強制保存
     overlay.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        save();
-      } else if (e.key === 'Escape') {
+      if (e.key === 'Escape') {
         close();
+        return;
       }
+      if (e.key !== 'Enter') return;
+      if (e.isComposing || e.keyCode === 229) return;
+      const isTextarea =
+        e.target instanceof HTMLElement && e.target.tagName === 'TEXTAREA';
+      if (isTextarea && !(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      save();
     });
   }
 
@@ -671,6 +777,8 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
       end: '10:00',
       title: '',
       location: '',
+      color: '',
+      comment: '',
     });
   });
   todayBtn.addEventListener('click', () => {
