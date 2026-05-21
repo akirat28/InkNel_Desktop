@@ -2897,6 +2897,7 @@ export default function App() {
                       editorRef={editorRef}
                       dateFormat={settings.dateFormat}
                       templateFolder={settings.templateFolder}
+                      enabledPlugins={settings.enabledPlugins}
                       disabled={!editorFocused}
                       onApplyTemplateTags={(tags) => {
                         // テンプレートのタグを現在のタグへマージ。重複は除く。

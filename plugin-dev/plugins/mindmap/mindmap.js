@@ -869,3 +869,27 @@ export const resetInPreview = (root) => {
       );
     });
 };
+
+/**
+ * エディタツールバー末尾に追加されるボタン定義。
+ * 有効化されているとホストがツールバー末尾に自動表示する。
+ */
+export const toolbarButtons = [
+  {
+    id: 'mindmap-insert',
+    label: 'マインドマップを挿入',
+    icon:
+      '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<rect x="1" y="6" width="4" height="4" rx="0.8" />' +
+      '<rect x="10" y="2" width="5" height="3" rx="0.6" />' +
+      '<rect x="10" y="6.5" width="5" height="3" rx="0.6" />' +
+      '<rect x="10" y="11" width="5" height="3" rx="0.6" />' +
+      '<path d="M5 8 Q 7.5 8, 10 3.5 M 5 8 L 10 8 M 5 8 Q 7.5 8, 10 12.5" />' +
+      '</svg>',
+    onClick({ insert }) {
+      insert(
+        '\n```mindmap\n- 中心トピック\n  - 枝 1\n    - 葉 1\n    - 葉 2\n  - 枝 2\n```\n',
+      );
+    },
+  },
+];

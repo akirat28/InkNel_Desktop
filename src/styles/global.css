@@ -3539,6 +3539,15 @@ body,
   color: inherit;
 }
 
+/* プラグイン提供アイコン (innerHTML で SVG 文字列を挿入): line-height を
+   殺してアイコンが垂直中央に来るようにする */
+.md-toolbar__plugin-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
 
 /* ---------- NoteHeader ---------- */
 .note-header {

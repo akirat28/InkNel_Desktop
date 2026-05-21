@@ -218,3 +218,26 @@ export const resetInPreview = (root) => {
       el.textContent = source;
     });
 };
+
+/**
+ * エディタツールバー末尾に追加されるボタン定義。
+ * 有効化されているとホストがツールバー末尾に自動表示する。
+ */
+export const toolbarButtons = [
+  {
+    id: 'mermaid-insert',
+    label: 'Mermaid 図を挿入',
+    icon:
+      '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<rect x="1" y="3" width="5" height="3.5" rx="0.6" />' +
+      '<rect x="10" y="3" width="5" height="3.5" rx="0.6" />' +
+      '<rect x="5.5" y="9.5" width="5" height="3.5" rx="0.6" />' +
+      '<path d="M3.5 6.5 L 6.5 9.5 M 12.5 6.5 L 9.5 9.5" />' +
+      '</svg>',
+    onClick({ insert }) {
+      insert(
+        '\n```mermaid\nflowchart LR\n  A[開始] --> B{条件}\n  B -->|Yes| C[処理1]\n  B -->|No| D[処理2]\n```\n',
+      );
+    },
+  },
+];

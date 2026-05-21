@@ -1,10 +1,13 @@
-import { useState, type RefObject } from 'react';
+import { useMemo, useState, type RefObject } from 'react';
 import type { EditorHandle } from './Editor';
 import TablePicker from './TablePicker';
 import IconPicker from './IconPicker';
 import LinkPopover from './LinkPopover';
 import TemplatePicker from './TemplatePicker';
 import { formatDate } from '../utils/dateFormat';
+import { listPlugins } from '../plugins/registry';
+import { getRuntimePlugins } from '../plugins/runtimeLoader';
+import type { PluginToolbarButton } from '../plugins/types';
 
 interface Props {
   editorRef: RefObject<EditorHandle>;
@@ -12,6 +15,11 @@ interface Props {
   dateFormat: string;
   /** テンプレートフォルダ名（設定から） */
   templateFolder: string;
+  /**
+   * 有効化されているプラグイン ID の配列。
+   * 該当プラグインに対応する挿入ボタン (Mermaid / Mindmap など) の表示制御に使う。
+   */
+  enabledPlugins?: readonly string[];
   /** true のとき全ボタンを操作不可にする（カーソルがエディタ外） */
   disabled?: boolean;
   /**
@@ -111,6 +119,7 @@ export default function EditorToolbar({
   editorRef,
   dateFormat,
   templateFolder,
+  enabledPlugins,
   disabled,
   onApplyTemplateTags,
 }: Props) {
@@ -118,6 +127,40 @@ export default function EditorToolbar({
     editorRef.current?.wrap(before, after, placeholder);
   const prefix = (p: string) => editorRef.current?.prefixLine(p);
   const insert = (s: string) => editorRef.current?.insert(s);
+
+  // ----- 有効化プラグインのツールバーボタンを収集 -----
+  // バンドル版 (src/plugins/) + ランタイム版 (DL 版) を id 重複排除しつつ統合し、
+  // enabledPlugins に含まれるものだけ toolbarButtons を取り出す。
+  // 新規プラグインが toolbarButtons を export すれば自動的にここに出る。
+  const pluginToolbarButtons = useMemo<PluginToolbarButton[]>(() => {
+    if (!enabledPlugins || enabledPlugins.length === 0) return [];
+    const enabledSet = new Set(enabledPlugins);
+    const seen = new Set<string>();
+    const all = [...listPlugins(), ...getRuntimePlugins()];
+    const out: PluginToolbarButton[] = [];
+    for (const p of all) {
+      if (!enabledSet.has(p.id) || seen.has(p.id)) continue;
+      seen.add(p.id);
+      const buttons = p.module.toolbarButtons;
+      if (!Array.isArray(buttons)) continue;
+      for (const b of buttons) {
+        if (b && typeof b.id === 'string' && typeof b.icon === 'string') {
+          out.push(b);
+        }
+      }
+    }
+    return out;
+  }, [enabledPlugins]);
+
+  // プラグインの onClick に渡すエディタ操作 API
+  const toolbarApi = useMemo(
+    () => ({
+      insert: (text: string) => editorRef.current?.insert(text),
+      wrap: (before: string, after: string, placeholder?: string) =>
+        editorRef.current?.wrap(before, after, placeholder),
+    }),
+    [editorRef],
+  );
 
   // テーブルピッカー（吹き出し型ポップアップ）の表示位置
   const [tablePickerPos, setTablePickerPos] = useState<{
@@ -358,6 +401,28 @@ export default function EditorToolbar({
           <TemplateIcon />
         </ToolBtn>
       </div>
+
+      {/* ----- プラグイン由来の挿入ボタン ----- */}
+      {pluginToolbarButtons.length > 0 && (
+        <>
+          <div className="md-toolbar__divider" />
+          <div className="md-toolbar__group">
+            {pluginToolbarButtons.map((btn) => (
+              <ToolBtn
+                key={btn.id}
+                label={btn.label}
+                onClick={() => btn.onClick(toolbarApi)}
+              >
+                <span
+                  className="md-toolbar__plugin-icon"
+                  dangerouslySetInnerHTML={{ __html: btn.icon }}
+                  aria-hidden="true"
+                />
+              </ToolBtn>
+            ))}
+          </div>
+        </>
+      )}
       {tablePickerPos && (
         <TablePicker
           x={tablePickerPos.x}
@@ -528,3 +593,4 @@ function SmileyIcon() {
     </svg>
   );
 }
+

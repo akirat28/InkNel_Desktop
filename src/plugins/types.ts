@@ -36,6 +36,35 @@ export interface PluginRenderContext {
   setBody?: (next: string) => void;
 }
 
+/**
+ * プラグインがエディタツールバーに追加するボタンの宣言。
+ * EditorToolbar は有効化済プラグインからこれを集めて末尾に表示する。
+ */
+export interface PluginToolbarButton {
+  /** ボタン id (プラグイン内ユニーク。重複時はそのプラグイン内で先勝ち) */
+  id: string;
+  /** tooltip / aria-label */
+  label: string;
+  /**
+   * アイコンの SVG マークアップ (string)。`<svg ...>...</svg>` を渡す。
+   * 14×14 を想定。stroke="currentColor" にしておくとテーマ追従する。
+   */
+  icon: string;
+  /**
+   * クリック時のハンドラ。エディタへ Markdown 文字列を挿入できる
+   * 最低限の API を受け取る。
+   */
+  onClick: (api: EditorToolbarApi) => void;
+}
+
+/** プラグインの toolbar ボタン onClick に渡されるエディタ操作 API */
+export interface EditorToolbarApi {
+  /** 現在のカーソル位置にテキストを挿入 */
+  insert(text: string): void;
+  /** 選択範囲を before/after で囲む。選択なしなら placeholder を挿入 */
+  wrap(before: string, after: string, placeholder?: string): void;
+}
+
 export interface PluginFenceArgs {
   /** コードブロックの中身 */
   code: string;
@@ -143,4 +172,10 @@ export interface PluginModule {
    * サイドバーの mode が一致したときレンダリングされる。
    */
   sidebarPanel?: PluginSidebarPanelDecl;
+  /**
+   * エディタツールバー末尾に追加されるボタン群（任意）。
+   * 有効化済プラグインの toolbarButtons をホストが集めて描画する。
+   * 新規プラグインを追加してもホスト側のコード変更は不要。
+   */
+  toolbarButtons?: PluginToolbarButton[];
 }
