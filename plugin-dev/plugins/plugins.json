@@ -16,6 +16,10 @@
     {
       "id": "math",
       "manifest": "math/math.json"
+    },
+    {
+      "id": "schedule",
+      "manifest": "schedule/schedule.json"
     }
   ]
 }

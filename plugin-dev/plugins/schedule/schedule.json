@@ -1,0 +1,10 @@
+{
+  "id": "schedule",
+  "name": "Schedule",
+  "version": "1.0.0",
+  "description": "```schedule コードブロックを 1 日のタイムスケジュール表として描画します。ビュー上でクリックして予定 (開始/終了/内容/場所) を追加・編集でき、8 時間表示・スクロールで残りの時間帯も閲覧可。エディタツールバーから雛形挿入も可能。",
+  "author": "InkNel",
+  "homepage": "https://inknel.ary-ap.com/plugins/schedule",
+  "entry": "schedule/schedule.js",
+  "files": ["schedule/schedule.js"]
+}
