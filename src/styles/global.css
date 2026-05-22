@@ -1353,6 +1353,20 @@ body,
   visibility: hidden;
 }
 
+/* CDN 配信中の旧プラグインは `cell.hasNote === false` の日にドット要素を
+   出さない。flex column + center で 1 要素しかないと数字が縦中央に来て
+   しまうため、`.day-dot` が DOM に存在しないセルにだけ ::after で同サイズの
+   見えないプレースホルダを追加し、ノート有り日と同じ高さに揃える。
+   新プラグイン (.day-content + 常時 .day-dot 出力) には `:has()` が
+   一致して ::after は付かないので影響なし。 */
+.calendar-panel__day:not(:has(.calendar-panel__day-dot))::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  visibility: hidden;
+}
+
 .calendar-panel__day:hover {
   background: rgba(99, 102, 241, 0.18);
   border-color: var(--accent, #818cf8);
