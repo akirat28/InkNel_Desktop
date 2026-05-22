@@ -1299,9 +1299,15 @@ body,
 .calendar-panel__day {
   position: relative;
   aspect-ratio: 1 / 1;
+  /* flex-direction: column を直接当てておくことで、
+     - 新版プラグイン: 子は .day-content 単独 (内側で更に flex column)
+     - 旧版プラグイン (CDN 配信): 子が .day-num と .day-dot の 2 つ → 縦並びに
+     のどちらでも日付の下にドットが来るようにする (CDN 更新までの後方互換)。 */
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   background: transparent;
   color: var(--fg);
   border: 1px solid transparent;
@@ -1352,9 +1358,14 @@ body,
   border-color: var(--accent, #818cf8);
 }
 
-/* 本日: ホバー時に出る枠 (.calendar-panel__day の枠) と同じサイズ感で
-   セル全体にアクセント色の背景を当てる。日付・ドットは flex で
-   中央配置されているのでセルが伸縮してもズレない。 */
+/* 本日 / 選択日にもホバー時は青の枠を被せる
+   (背景色は元の状態を維持。枠だけ強調) */
+.calendar-panel__day.is-today:hover,
+.calendar-panel__day.is-selected:hover {
+  border-color: var(--accent, #818cf8);
+}
+
+/* 本日: アクセント (青) でセル全体を塗りつぶす */
 .calendar-panel__day.is-today {
   background: var(--accent, #6366f1);
   border-color: var(--accent, #6366f1);
@@ -1367,6 +1378,17 @@ body,
 }
 .calendar-panel__day.is-today .calendar-panel__day-dot {
   background: #fff;
+}
+
+/* クリックで選択された日付: 薄い青 (アクセント色の半透明) で塗りつぶす。
+   本日と重なった場合はカスケード優先で「薄い青」が勝つ。 */
+.calendar-panel__day.is-selected {
+  background: rgba(99, 102, 241, 0.35);
+  border-color: var(--accent, #6366f1);
+  font-weight: 700;
+}
+.calendar-panel__day.is-selected .calendar-panel__day-content {
+  background: transparent;
 }
 
 .calendar-panel__day.is-sun {
@@ -1382,6 +1404,14 @@ body,
 .calendar-panel__day.is-today.is-sun .calendar-panel__day-content,
 .calendar-panel__day.is-today.is-sat .calendar-panel__day-content,
 .calendar-panel__day.is-today.is-holiday .calendar-panel__day-content {
+  color: #fff;
+}
+/* 旧プラグイン (CDN 配信、.day-content 無し) 用フォールバック: 本日のセル
+   全面青背景の上に直接乗る文字色を白に上書き */
+.calendar-panel__day.is-today,
+.calendar-panel__day.is-today.is-sun,
+.calendar-panel__day.is-today.is-sat,
+.calendar-panel__day.is-today.is-holiday {
   color: #fff;
 }
 

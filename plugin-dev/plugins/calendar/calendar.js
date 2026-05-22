@@ -100,6 +100,8 @@ function CalendarPanel({ notes, settings, onSelectNote, onCreateNote }) {
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [pendingCreate, setPendingCreate] = useState(null);
+  // クリックされた日付 (YYYY-MM-DD)。青背景でハイライト表示する。
+  const [selectedYmd, setSelectedYmd] = useState(null);
 
   const grid = useMemo(
     () =>
@@ -127,6 +129,8 @@ function CalendarPanel({ notes, settings, onSelectNote, onCreateNote }) {
 
   const handleCellClick = (cell) => {
     if (!cell.day || !cell.ymd || !cell.date) return;
+    // クリックされた日付を選択状態として記録 (青背景でハイライト)
+    setSelectedYmd(cell.ymd);
     const info = {
       holidayName: cell.holidayName,
       eventName: cell.eventName,
@@ -260,6 +264,7 @@ function CalendarPanel({ notes, settings, onSelectNote, onCreateNote }) {
             className:
               'calendar-panel__day ' +
               (cell.isToday ? 'is-today ' : '') +
+              (cell.ymd && cell.ymd === selectedYmd ? 'is-selected ' : '') +
               (isSun ? 'is-sun ' : '') +
               (isSat ? 'is-sat ' : '') +
               (cell.holidayName ? 'is-holiday ' : '') +
