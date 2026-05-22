@@ -17,6 +17,10 @@ interface Props {
   onSelectTags: () => void;
   /** 履歴ボタン押下時のコールバック。未指定なら履歴ボタンは非表示 */
   onSelectHistory?: () => void;
+  /** カレンダーボタン押下時のコールバック (組み込み機能) */
+  onSelectCalendar: () => void;
+  /** カレンダーボタンを表示するか (設定の calendarEnabled) */
+  calendarEnabled?: boolean;
   /** 履歴ボタンを表示するか（設定の historyEnabled） */
   historyEnabled?: boolean;
   /** 有効化中プラグインの enabledPlugins 配列 */
@@ -58,6 +62,8 @@ export default function ActivityBar({
   onSelectSearch,
   onSelectTags,
   onSelectHistory,
+  onSelectCalendar,
+  calendarEnabled,
   historyEnabled,
   enabledPlugins,
   onSelectPluginMode,
@@ -70,8 +76,11 @@ export default function ActivityBar({
   const searchActive = sidebarMode === 'search';
   const tagsActive = sidebarMode === 'tags';
   const historyActive = sidebarMode === 'history';
+  const calendarActive = sidebarMode === 'calendar';
   const syncActive = sidebarMode === 'sync';
   const showHistory = !!historyEnabled && !!onSelectHistory;
+  // calendarEnabled が undefined のときは「既定: 表示」(後方互換)
+  const showCalendar = calendarEnabled !== false;
 
   // ===== プラグイン由来のアクティビティバーアイテム =====
   // 有効化中プラグインから `activityBarItem` を持つものを集めて
@@ -87,7 +96,10 @@ export default function ActivityBar({
       .map((p) => p.module.activityBarItem)
       .filter(
         (item): item is NonNullable<typeof item> => item !== undefined,
-      );
+      )
+      // 'calendar' は組み込み機能化されたので、旧 calendar プラグインが
+      // CDN 経由で残っていても重複してボタンを描画しない。
+      .filter((item) => item.mode !== 'calendar');
     // pluginRev は subscribeRuntimePlugins の通知で更新される
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabledPlugins, pluginRev]);
@@ -123,6 +135,15 @@ export default function ActivityBar({
             onClick={onSelectHistory!}
           >
             <HistoryIcon />
+          </IconButton>
+        )}
+        {showCalendar && (
+          <IconButton
+            label={t.activity.calendar}
+            active={calendarActive}
+            onClick={onSelectCalendar}
+          >
+            <CalendarIcon />
           </IconButton>
         )}
         {pluginItems.map((item) => (
@@ -285,6 +306,28 @@ function ShareIcon({ spinning }: { spinning?: boolean }) {
       {/* 上下の同期矢印 */}
       <path d="M10 13 L10 17 L8 15 M10 17 L12 15" />
       <path d="M14 17 L14 13 L16 15 M14 13 L12 15" />
+    </svg>
+  );
+}
+
+/** カレンダーアイコン (組み込みカレンダー機能用) */
+function CalendarIcon() {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="4" width="18" height="17" rx="2" />
+      <line x1="3" y1="9" x2="21" y2="9" />
+      <line x1="8" y1="3" x2="8" y2="5" />
+      <line x1="16" y1="3" x2="16" y2="5" />
     </svg>
   );
 }

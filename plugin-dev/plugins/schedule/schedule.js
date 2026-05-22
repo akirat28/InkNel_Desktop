@@ -323,7 +323,10 @@ function ensureStyle() {
 .schedule-event__title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .schedule-event__location { font-size: 10px; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .schedule-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 50; border-radius: 8px; }
-.schedule-form { background: var(--bg-elevated, #2a2a2a); border: 1px solid var(--border, #555); border-radius: 8px; padding: 16px; min-width: 320px; max-width: 90%; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+/* 編集モーダル: 横幅は旧仕様の 1.5 倍 (480px)、右辺を D&D で横方向のみリサイズ可能。
+   縦方向はコンテンツに合わせて自動伸縮 (resize: horizontal)。
+   resize を有効化するため overflow を visible 以外にする。 */
+.schedule-form { background: var(--bg-elevated, #2a2a2a); border: 1px solid var(--border, #555); border-radius: 8px; padding: 24px; width: 480px; min-width: 480px; max-width: 95%; max-height: 95%; box-shadow: 0 8px 24px rgba(0,0,0,0.5); resize: horizontal; overflow: auto; box-sizing: border-box; }
 .schedule-form h4 { margin: 0 0 12px; font-size: 14px; font-weight: 600; color: var(--fg, #eee); }
 .schedule-form-row { display: grid; grid-template-columns: 80px 1fr; gap: 8px; margin-bottom: 8px; align-items: center; }
 .schedule-form-row label { font-size: 12px; color: var(--fg-muted, #aaa); }
@@ -758,6 +761,16 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
     commentInput.rows = 3;
     commentInput.placeholder = 'メモ / 議題 / 参加者など (タイムラインには表示されません)';
     commentInput.value = initial.comment || '';
+    // 内容量に応じて自動で高さを伸縮させる。手動リサイズは無効化 (auto-fit に統一)。
+    commentInput.style.resize = 'none';
+    commentInput.style.overflow = 'hidden';
+    const autoResizeComment = () => {
+      commentInput.style.height = 'auto';
+      commentInput.style.height = commentInput.scrollHeight + 'px';
+    };
+    commentInput.addEventListener('input', autoResizeComment);
+    // モーダル表示直後 (DOM 接続後) に scrollHeight を測って初期高さを合わせる
+    setTimeout(autoResizeComment, 0);
     commentRow.append(commentLabel, commentInput);
 
     // アクション
@@ -789,9 +802,9 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
 
     const close = () => overlay.remove();
     cancelBtn.addEventListener('click', close);
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) close();
-    });
+    // モーダルは「保存」か「キャンセル」(または削除) ボタンでのみ閉じる。
+    // 背景クリックや Esc で閉じる処理は意図せず閉じやすい (特に form を
+    // D&D リサイズ中のマウスアップが overlay 上で発火する) ので無効化。
     if (delBtn) {
       delBtn.addEventListener('click', () => {
         events.splice(initial.index, 1);
@@ -826,16 +839,11 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
       close();
     };
     saveBtn.addEventListener('click', save);
-    // Enter で保存、Esc で閉じる。
-    // ただし以下のケースでは save しない:
-    //   - IME 変換確定の Enter (e.isComposing === true もしくは keyCode 229)
-    //   - textarea にフォーカスがある場合 (改行を許容)
-    //     ただし Cmd/Ctrl+Enter なら強制保存
+    // Enter で保存。
+    //   - IME 変換確定の Enter (e.isComposing === true もしくは keyCode 229) は無視
+    //   - textarea にフォーカスがある場合は改行を許容、ただし Cmd/Ctrl+Enter で強制保存
+    // Esc では閉じない (誤閉防止)。閉じる手段はボタン「保存」/「キャンセル」(/「削除」)のみ。
     overlay.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        close();
-        return;
-      }
       if (e.key !== 'Enter') return;
       if (e.isComposing || e.keyCode === 229) return;
       const isTextarea =

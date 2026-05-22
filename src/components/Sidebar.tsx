@@ -14,6 +14,7 @@ import SyncPanel from './SyncPanel';
 import StorageSyncPanel from './StorageSyncPanel';
 import TagsPanel from './TagsPanel';
 import HistoryPanel, { type HistoryEntry } from './HistoryPanel';
+import CalendarPanel from '../calendar/CalendarPanel';
 import { getEnabledPlugins } from '../plugins/registry';
 import { subscribeRuntimePlugins } from '../plugins/runtimeLoader';
 import type { AppSettings } from '../settings';
@@ -691,9 +692,11 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
                   ? t.sidebar.tags
                   : mode === 'history'
                     ? t.sidebar.history
-                    : mode === 'sync'
-                      ? t.sidebar.sync
-                      : // プラグイン由来モードのタイトルは
+                    : mode === 'calendar'
+                      ? t.activity.calendar
+                      : mode === 'sync'
+                        ? t.sidebar.sync
+                        : // プラグイン由来モードのタイトルは
                         //   activityBarItem.label を流用する。
                         (pluginSidebarPanel
                           ? // plugin の activityBarItem.label を本体側ヘッダに使う
@@ -878,6 +881,13 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
             activeId={activeId}
             onSelect={onHistorySelect ?? onSelect}
             onClear={onClearOpenHistory}
+          />
+        ) : mode === 'calendar' ? (
+          <CalendarPanel
+            notes={notes}
+            settings={settings}
+            onSelectNote={onSelect}
+            onCreateNote={onPluginCreateNote}
           />
         ) : pluginSidebarPanel ? (
           // ===== プラグイン由来のサイドバーモード =====

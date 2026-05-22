@@ -4562,6 +4562,26 @@ body,
   border-color: var(--accent);
 }
 
+/* PreferencesModal のテキスト入力 (select と同サイズ感に揃える) */
+.prefs__input {
+  flex-shrink: 0;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  min-width: 180px;
+}
+.prefs__input:focus {
+  border-color: var(--accent);
+}
+.prefs__input:hover {
+  border-color: var(--accent);
+}
+
 .prefs__field:last-child {
   border-bottom: none;
 }

@@ -6,10 +6,6 @@
       "manifest": "mermaid/mermaid.json"
     },
     {
-      "id": "calendar",
-      "manifest": "calendar/calendar.json"
-    },
-    {
       "id": "mindmap",
       "manifest": "mindmap/mindmap.json"
     },

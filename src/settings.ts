@@ -176,7 +176,10 @@ export const CALENDAR_TITLE_FORMAT_OPTIONS: CalendarTitleFormatOption[] = [
   { value: 'YYYY/M/D', label: 'YYYY/M/D（例: 2026/5/14）' },
   { value: 'YYYY年M月D日', label: 'YYYY年M月D日（例: 2026年5月14日）' },
   { value: 'YYYY年MM月DD日', label: 'YYYY年MM月DD日（例: 2026年05月14日）' },
-  { value: 'M/D', label: 'M/D（例: 5/14）' },
+  {
+    value: 'YYYY年/MM月/DD日',
+    label: 'YYYY年/MM月/DD日（年・月でフォルダ分け、例: 2026年/05月/14日）',
+  },
 ];
 
 export const DEFAULT_CALENDAR_PLUGIN_SETTINGS: CalendarPluginSettings = {
@@ -221,6 +224,8 @@ export interface AppSettings {
   searchHistoryLimit: SearchHistoryLimit;
   /** ノート開封履歴を記録するか。ON のときアクティビティバーに「履歴」ボタンを表示 */
   historyEnabled: boolean;
+  /** カレンダー機能を有効化するか。ON のときアクティビティバーに「カレンダー」ボタンを表示 */
+  calendarEnabled: boolean;
   /** ノート開封履歴の最大件数 */
   historyLimit: OpenHistoryLimit;
   /** サイドバーの幅 (px) */
@@ -312,6 +317,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   searchHistoryMode: 'reset',
   searchHistoryLimit: 100,
   historyEnabled: false,
+  calendarEnabled: true,
   historyLimit: 100,
   sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
   codeCopyAlwaysVisible: false,
@@ -385,6 +391,10 @@ export function parseSettings(raw: Record<string, string>): AppSettings {
     historyEnabled: parseBool(
       raw['history.enabled'],
       DEFAULT_SETTINGS.historyEnabled,
+    ),
+    calendarEnabled: parseBool(
+      raw['calendar.enabled'],
+      DEFAULT_SETTINGS.calendarEnabled,
     ),
     historyLimit: parseOpenHistoryLimit(
       raw['history.limit'],
@@ -501,6 +511,8 @@ export function settingToRecord<K extends keyof AppSettings>(
       return { key: 'search.historyLimit', value: String(value) };
     case 'historyEnabled':
       return { key: 'history.enabled', value: String(value) };
+    case 'calendarEnabled':
+      return { key: 'calendar.enabled', value: String(value) };
     case 'historyLimit':
       return { key: 'history.limit', value: String(value) };
     case 'sidebarWidth':

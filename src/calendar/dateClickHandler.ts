@@ -1,16 +1,16 @@
 /**
- * カレンダー日付クリック時のフォルダパス算出 / ノート本文生成（純 JS）。
- * src/plugins/calendar/dateClickHandler.ts と等価。
+ * カレンダー日付クリック時のフォルダパス算出 / ノート本文生成。
+ * 旧 plugin-dev/plugins/calendar/dateClickHandler.js を TS 化。
  */
 
 const TOKEN_RE = /YYYY|MM|DD|HH|mm|ss|M|D/g;
 
-function pad2(n) {
+function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
 /** 日付を任意フォーマットで文字列化 */
-export function formatDate(date, format) {
+export function formatDate(date: Date, format: string): string {
   return format.replace(TOKEN_RE, (token) => {
     switch (token) {
       case 'YYYY':
@@ -39,7 +39,11 @@ export function formatDate(date, format) {
  * 指定日付に対応するノートのフォルダパスとタイトルを計算。
  * `/` を含む書式はフォルダ階層化、含まなければベース直下フラット。
  */
-export function computeNotePathForDate(date, baseFolder, titleFormat) {
+export function computeNotePathForDate(
+  date: Date,
+  baseFolder: string,
+  titleFormat: string,
+): { folder: string; title: string } {
   const folderBase = (baseFolder || '').trim() || 'カレンダー';
   const formatted = formatDate(date, titleFormat);
   const segments = formatted
@@ -54,20 +58,28 @@ export function computeNotePathForDate(date, baseFolder, titleFormat) {
   return { folder: folderBase, title: formatted };
 }
 
+export interface CalendarDayInfo {
+  holidayName: string | null;
+  eventName: string | null;
+}
+
 /**
  * 新規ノートの本文を組み立てる。祝日 / イベントがあれば本文先頭に引用ブロックで挿入。
  */
-export function buildCalendarNoteBody(ymd, info) {
+export function buildCalendarNoteBody(
+  ymd: string,
+  info: CalendarDayInfo,
+): string {
   const holiday = info && info.holidayName ? info.holidayName : null;
   const event = info && info.eventName ? info.eventName : null;
-  const titleSuffixParts = [];
+  const titleSuffixParts: string[] = [];
   if (holiday) titleSuffixParts.push(holiday);
   if (event) titleSuffixParts.push(event);
   const heading =
     titleSuffixParts.length > 0
       ? `# ${ymd} ${titleSuffixParts.join(' / ')}`
       : `# ${ymd}`;
-  const intro = [];
+  const intro: string[] = [];
   if (holiday) intro.push(`> 祝日: ${holiday}`);
   if (event) intro.push(`> イベント: ${event}`);
   return intro.length > 0

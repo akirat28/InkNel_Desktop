@@ -1,10 +1,15 @@
 /**
  * 日本の祝祭日生成。
- * 固定祝日 + ハッピーマンデー + 春分／秋分の概算 + 振替休日 + 国民の休日。
- * src/plugins/calendar/holidays.ts と等価。
+ * 固定祝日 + ハッピーマンデー + 春分/秋分の概算 + 振替休日 + 国民の休日。
+ * 旧 plugin-dev/plugins/calendar/holidays.js を TS 化。
  */
 
-function getNthMonday(year, month, nth) {
+export interface Holiday {
+  date: string; // YYYY-MM-DD
+  name: string;
+}
+
+function getNthMonday(year: number, month: number, nth: number): Date {
   const firstDay = new Date(year, month - 1, 1);
   const firstDayOfWeek = firstDay.getDay();
   const diff = (1 - firstDayOfWeek + 7) % 7;
@@ -12,30 +17,30 @@ function getNthMonday(year, month, nth) {
   return new Date(year, month - 1, day);
 }
 
-function getSpringEquinox(year) {
+function getSpringEquinox(year: number): Date {
   const day =
     Math.floor(20.8431 + 0.242194 * (year - 1980)) -
     Math.floor((year - 1980) / 4);
   return new Date(year, 2, day);
 }
 
-function getAutumnEquinox(year) {
+function getAutumnEquinox(year: number): Date {
   const day =
     Math.floor(23.2488 + 0.242194 * (year - 1980)) -
     Math.floor((year - 1980) / 4);
   return new Date(year, 8, day);
 }
 
-function format(date) {
+function format(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
 
-export function generateJapaneseHolidays(year) {
-  const holidays = [];
-  const add = (date, name) => {
+export function generateJapaneseHolidays(year: number): Holiday[] {
+  const holidays: Holiday[] = [];
+  const add = (date: Date, name: string) => {
     holidays.push({ date: format(date), name });
   };
 
@@ -59,7 +64,7 @@ export function generateJapaneseHolidays(year) {
   add(getAutumnEquinox(year), '秋分の日');
 
   const holidayDates = new Set(holidays.map((h) => h.date));
-  const extra = [];
+  const extra: Holiday[] = [];
   for (const h of holidays) {
     const d = new Date(h.date);
     if (d.getDay() === 0) {
@@ -75,7 +80,7 @@ export function generateJapaneseHolidays(year) {
   holidays.push(...extra);
 
   holidays.sort((a, b) => (a.date > b.date ? 1 : -1));
-  const interpolated = [];
+  const interpolated: Holiday[] = [];
   for (let i = 0; i < holidays.length - 1; i++) {
     const d1 = new Date(holidays[i].date);
     const d2 = new Date(holidays[i + 1].date);

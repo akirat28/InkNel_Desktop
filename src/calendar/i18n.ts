@@ -1,9 +1,24 @@
 /**
- * カレンダープラグイン専用の i18n テーブル（配布版）。
- * src/plugins/calendar/i18n.ts と等価。
+ * カレンダー組み込み機能の i18n。
+ * 旧 plugin-dev/plugins/calendar/i18n.js を TypeScript 化したもの。
  */
 
-export const CALENDAR_I18N = {
+export interface CalendarStrings {
+  prevMonth: string;
+  nextMonth: string;
+  today: string;
+  todayTooltip: string;
+  weekdays: readonly [string, string, string, string, string, string, string];
+  holidayPrefix: string;
+  eventPrefix: string;
+  tooltipOpenExisting: string;
+  tooltipCreate: string;
+  hasNoteLabel: string;
+  confirmCreateText: string;
+  cancel: string;
+}
+
+export const CALENDAR_I18N: Record<string, CalendarStrings> = {
   ja: {
     prevMonth: '前の月',
     nextMonth: '次の月',
@@ -34,6 +49,6 @@ export const CALENDAR_I18N = {
   },
 };
 
-export function getCalendarStrings(langCode) {
+export function getCalendarStrings(langCode: string): CalendarStrings {
   return CALENDAR_I18N[langCode] ?? CALENDAR_I18N.en;
 }

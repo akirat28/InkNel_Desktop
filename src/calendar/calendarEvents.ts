@@ -1,32 +1,38 @@
 /**
  * 日本のカレンダーイベント生成（祝日ではない、習慣的な記念日）。
- * src/plugins/calendar/calendarEvents.ts と等価。
+ * 旧 plugin-dev/plugins/calendar/calendarEvents.js を TS 化。
  */
 
-function format(date) {
+export interface CalendarEvent {
+  date: string; // YYYY-MM-DD
+  name: string;
+  category: string;
+}
+
+function format(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
 
-function getNthSunday(year, month, nth) {
+function getNthSunday(year: number, month: number, nth: number): Date {
   const first = new Date(year, month - 1, 1);
   const diff = (7 - first.getDay()) % 7;
   const day = 1 + diff + (nth - 1) * 7;
   return new Date(year, month - 1, day);
 }
 
-function getSetsubun(year) {
+function getSetsubun(year: number): Date {
   if (year === 2021 || year === 2025 || year === 2029 || year === 2033) {
     return new Date(year, 1, 2);
   }
   return new Date(year, 1, 3);
 }
 
-export function generateSpecialEvents(year) {
-  const events = [];
-  const add = (date, name, category) => {
+export function generateSpecialEvents(year: number): CalendarEvent[] {
+  const events: CalendarEvent[] = [];
+  const add = (date: Date, name: string, category: string) => {
     events.push({ date: format(date), name, category });
   };
 

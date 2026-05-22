@@ -1,39 +1,57 @@
 /**
- * カレンダーグリッドの「データ層」を構築する純 JS モジュール。
- * src/plugins/calendar/CalendarPanel.tsx のグリッド計算ロジックと等価。
+ * カレンダーグリッドのデータ層構築。
+ * 旧 plugin-dev/plugins/calendar/calendarGrid.js を TS 化。
  */
 
-import { generateJapaneseHolidays } from './holidays.js';
-import { generateSpecialEvents } from './calendarEvents.js';
-import { computeNotePathForDate } from './dateClickHandler.js';
+import { generateJapaneseHolidays } from './holidays';
+import { generateSpecialEvents } from './calendarEvents';
+import { computeNotePathForDate } from './dateClickHandler';
 
-function pad2(n) {
+export interface CalendarCell {
+  day: number | null;
+  ymd: string | null;
+  date: Date | null;
+  hasNote: boolean;
+  holidayName: string | null;
+  eventName: string | null;
+  isToday: boolean;
+  weekday: number;
+}
+
+export interface NoteLite {
+  folder: string;
+  title: string;
+}
+
+export interface BuildCalendarGridParams {
+  year: number;
+  month: number; // 0..11
+  notes: NoteLite[];
+  baseFolder: string;
+  titleFormat: string;
+  todayRef?: Date;
+}
+
+function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-function formatYmd(year, month, day) {
+function formatYmd(year: number, month: number, day: number): string {
   return `${year}-${pad2(month + 1)}-${pad2(day)}`;
 }
 
-/**
- * @param {Object} params
- * @param {number} params.year
- * @param {number} params.month  - 0..11
- * @param {Array<{folder:string,title:string}>} params.notes
- * @param {string} params.baseFolder
- * @param {string} params.titleFormat
- * @param {Date}   [params.todayRef]
- */
-export function buildCalendarGrid(params) {
+export function buildCalendarGrid(
+  params: BuildCalendarGridParams,
+): CalendarCell[] {
   const { year, month, notes, baseFolder, titleFormat } = params;
   const todayRef = params.todayRef ?? new Date();
 
-  const noteKeySet = new Set();
+  const noteKeySet = new Set<string>();
   for (const n of notes) noteKeySet.add(`${n.folder}|${n.title}`);
 
-  const holidayMap = new Map();
+  const holidayMap = new Map<string, string>();
   for (const h of generateJapaneseHolidays(year)) holidayMap.set(h.date, h.name);
-  const eventMap = new Map();
+  const eventMap = new Map<string, string>();
   for (const e of generateSpecialEvents(year)) eventMap.set(e.date, e.name);
 
   const todayYmd = formatYmd(
@@ -45,8 +63,8 @@ export function buildCalendarGrid(params) {
   const start = new Date(year, month, 1).getDay();
   const len = new Date(year, month + 1, 0).getDate();
 
-  const cells = [];
-  const empty = () => ({
+  const cells: CalendarCell[] = [];
+  const empty = (): CalendarCell => ({
     day: null,
     ymd: null,
     date: null,

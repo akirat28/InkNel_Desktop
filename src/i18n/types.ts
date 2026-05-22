@@ -44,6 +44,7 @@ export interface Locale {
     search: string;
     tags: string;
     history: string;
+    calendar: string;
     sync: string;
     syncStorage: string; // 「保存先と同期」
     aiChat: string;
@@ -222,6 +223,7 @@ export interface Locale {
       template: string;
       protection: string;
       storage: string;
+      calendar: string;
       plugins: string;
       backup: string;
       restore: string;

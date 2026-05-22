@@ -477,11 +477,25 @@ export default function App() {
     }
   }, [settings.historyEnabled, sidebarMode]);
 
+  // カレンダー無効化中に calendar モード表示だった場合、files にフォールバック
+  useEffect(() => {
+    if (!settings.calendarEnabled && sidebarMode === 'calendar') {
+      setSidebarMode('files');
+    }
+  }, [settings.calendarEnabled, sidebarMode]);
+
   // プラグイン提供モードがサイドバーで表示中だったが、そのプラグインが
   // 無効化された場合は files モードへ自動的に戻す。
   // 「組み込みモード以外 ＆ どの有効化プラグインも mode を提供していない」が条件。
   useEffect(() => {
-    const builtins = new Set(['files', 'search', 'tags', 'history', 'sync']);
+    const builtins = new Set([
+      'files',
+      'search',
+      'tags',
+      'history',
+      'calendar',
+      'sync',
+    ]);
     if (builtins.has(sidebarMode)) return;
     const enabled = getEnabledPlugins(settings.enabledPlugins);
     const provided = enabled.some(
@@ -2248,6 +2262,16 @@ export default function App() {
     }
   };
 
+  // ----- ActivityBar カレンダーアイコン (サイドバーを calendar モードへ切替) -----
+  const handleSelectCalendar = () => {
+    if (sidebarMode === 'calendar') {
+      setSidebarCollapsed((v) => !v);
+    } else {
+      setSidebarMode('calendar');
+      if (sidebarCollapsed) setSidebarCollapsed(false);
+    }
+  };
+
   // ----- ActivityBar からプラグイン由来モードへ切替 -----
   // どのプラグインが提供する mode かは ActivityBar 側で集約済み。
   // ここでは渡された mode 文字列でサイドバーを切り替えるだけ。
@@ -2856,6 +2880,8 @@ export default function App() {
           onSelectSearch={handleSelectSearch}
           onSelectTags={handleSelectTags}
           onSelectHistory={handleSelectHistory}
+          onSelectCalendar={handleSelectCalendar}
+          calendarEnabled={settings.calendarEnabled}
           historyEnabled={settings.historyEnabled}
           enabledPlugins={settings.enabledPlugins}
           onSelectPluginMode={handleSelectPluginMode}

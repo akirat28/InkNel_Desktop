@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   AI_PROVIDER_OPTIONS,
+  CALENDAR_TITLE_FORMAT_OPTIONS,
   DATE_FORMAT_OPTIONS,
   DEFAULT_SETTINGS,
   FONT_FAMILY_OPTIONS,
@@ -9,6 +10,7 @@ import {
   type AiProvider,
   type AiProviderSettings,
   type AppSettings,
+  type CalendarPluginSettings,
   type FontFamily,
   type FontSize,
   type Language,
@@ -71,6 +73,7 @@ type CategoryKey =
   | 'template'
   | 'protection'
   | 'storage'
+  | 'calendar'
   | 'plugins'
   | 'backup'
   | 'restore'
@@ -103,6 +106,7 @@ export default function PreferencesModal({
       { key: 'template', label: t.settings.categories.template },
       { key: 'protection', label: t.settings.categories.protection },
       { key: 'storage', label: t.settings.categories.storage },
+      { key: 'calendar', label: t.settings.categories.calendar },
       { key: 'plugins', label: t.settings.categories.plugins },
       { key: 'backup', label: t.settings.categories.backup },
       { key: 'restore', label: t.settings.categories.restore },
@@ -182,6 +186,9 @@ export default function PreferencesModal({
             )}
             {active === 'storage' && (
               <StoragePanel settings={settings} onChange={onChange} />
+            )}
+            {active === 'calendar' && (
+              <CalendarPanel settings={settings} onChange={onChange} />
             )}
             {active === 'plugins' && (
               <PluginsPanel settings={settings} onChange={onChange} />
@@ -1973,6 +1980,93 @@ function StoragePanel({ settings, onChange }: PanelProps) {
           <span>{message.text}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// カレンダー設定パネル
+// ============================================================
+// 旧 calendar プラグインの SettingsComponent (フォルダ名 / 日付書式) を
+// 本体設定 (settings.calendarPlugin) として常設化したもの。
+function CalendarPanel({ settings, onChange }: PanelProps) {
+  const cfg: CalendarPluginSettings = settings.calendarPlugin ?? {
+    folder: 'カレンダー',
+    titleFormat: 'YYYY-MM-DD',
+  };
+
+  const updateFolder = (folder: string) => {
+    onChange('calendarPlugin', { ...cfg, folder });
+  };
+  const updateTitleFormat = (titleFormat: string) => {
+    onChange('calendarPlugin', { ...cfg, titleFormat });
+  };
+
+  const t = useT();
+
+  return (
+    <div className="prefs__section">
+      <h3 className="prefs__section-title">{t.settings.categories.calendar}</h3>
+
+      {/* ----- カレンダー機能の有効化 ----- */}
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label className="prefs__field-label">カレンダーを利用する</label>
+          <p className="prefs__field-desc">
+            OFF にするとアクティビティバーからカレンダーボタンを非表示にします。
+          </p>
+        </div>
+        <ToggleSwitch
+          checked={settings.calendarEnabled}
+          onChange={(v) => onChange('calendarEnabled', v)}
+          ariaLabel="カレンダーを利用する"
+        />
+      </div>
+
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label className="prefs__field-label" htmlFor="prefs-calendar-folder">
+            ノートフォルダ名
+          </label>
+          <p className="prefs__field-desc">
+            カレンダーから作成したノートを保存するフォルダ名。既定:
+            「カレンダー」。
+          </p>
+        </div>
+        <input
+          id="prefs-calendar-folder"
+          type="text"
+          className="prefs__input"
+          value={cfg.folder}
+          onChange={(e) => updateFolder(e.target.value)}
+          placeholder="カレンダー"
+          disabled={!settings.calendarEnabled}
+        />
+      </div>
+
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label className="prefs__field-label" htmlFor="prefs-calendar-title">
+            ノートタイトル書式
+          </label>
+          <p className="prefs__field-desc">
+            日付からノートタイトルを生成する書式。`/` を含めるとサブフォルダになります。
+          </p>
+        </div>
+        <select
+          id="prefs-calendar-title"
+          className="prefs__select"
+          value={cfg.titleFormat}
+          onChange={(e) => updateTitleFormat(e.target.value)}
+          disabled={!settings.calendarEnabled}
+        >
+          {CALENDAR_TITLE_FORMAT_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 }
