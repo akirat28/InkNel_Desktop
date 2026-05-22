@@ -2990,7 +2990,10 @@ export default function App() {
                           enabledHighlightLangs={settings.enabledHighlightLangs}
                           enabledPlugins={settings.enabledPlugins}
                           theme={settings.theme}
-                          onChange={handleBodyChange}
+                          // 保護ノートが未解錠 (isActiveLocked) なら onChange を渡さない。
+                          // → Schedule などビュー側で編集できるプラグインも自動的に
+                          //   read-only になり、タスクチェックボックスも反応しない。
+                          onChange={isActiveLocked ? undefined : handleBodyChange}
                           onScroll={handlePreviewScroll}
                         />
                       </>
@@ -3011,7 +3014,8 @@ export default function App() {
                         enabledHighlightLangs={settings.enabledHighlightLangs}
                         enabledPlugins={settings.enabledPlugins}
                         theme={settings.theme}
-                        onChange={handleBodyChange}
+                        // 保護ノートが未解錠 (isActiveLocked) ならビュー編集系を封じる
+                        onChange={isActiveLocked ? undefined : handleBodyChange}
                       />
                     )}
                   </div>

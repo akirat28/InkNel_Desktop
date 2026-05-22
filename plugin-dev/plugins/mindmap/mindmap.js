@@ -292,6 +292,10 @@ function renderMindmapBlock(blockEl, blockIndex, ctx, rootEl) {
     blockEl.getAttribute('data-mindmap-source') ?? '',
   );
 
+  // 編集可否: ctx.setBody が無い (= 保護ノート未解錠など) なら read-only。
+  // パン / ズーム / リセット など閲覧系操作は残し、ツリー変更系を全部封じる。
+  const canEdit = typeof ctx?.setBody === 'function';
+
   // ローカル状態
   let tree = parseSource(source);
   // 状態を WeakMap (preview root を key) から取り出す。Preview の本文編集で
@@ -345,6 +349,12 @@ function renderMindmapBlock(blockEl, blockIndex, ctx, rootEl) {
   const delBtn = document.createElement('button');
   delBtn.type = 'button';
   delBtn.textContent = '削除';
+  // read-only モード時は編集系ボタンを丸ごと隠す (UI 上も「触れない」と分かる)
+  if (!canEdit) {
+    addChildBtn.style.display = 'none';
+    addSiblingBtn.style.display = 'none';
+    delBtn.style.display = 'none';
+  }
 
   toolbar.append(
     zoomOut,
@@ -357,6 +367,14 @@ function renderMindmapBlock(blockEl, blockIndex, ctx, rootEl) {
     addSiblingBtn,
     delBtn,
   );
+  if (!canEdit) {
+    const lockedTag = document.createElement('span');
+    lockedTag.textContent = '🔒 保護中 (閲覧のみ)';
+    lockedTag.style.fontSize = '11px';
+    lockedTag.style.color = 'var(--fg-muted, #888)';
+    lockedTag.style.marginLeft = 'auto';
+    toolbar.append(lockedTag);
+  }
 
   const canvasWrap = document.createElement('div');
   canvasWrap.className = 'mindmap-canvas-wrap';
@@ -489,17 +507,36 @@ function renderMindmapBlock(blockEl, blockIndex, ctx, rootEl) {
       // 自前の mousedown→ mousemove → mouseup ベースで実装する。
       el.draggable = false;
 
-      el.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        e.stopPropagation();
-        nodeMouseDown(e, n.node.id, el);
-      });
-      el.addEventListener('dblclick', (e) => {
-        e.stopPropagation();
-        editingId = n.node.id;
-        selectedId = n.node.id;
-        render();
-      });
+      if (canEdit) {
+        // 編集可能: mousedown でドラッグ移動 (移動量小さければクリック=選択)、
+        // ダブルクリックで rename。
+        el.addEventListener('mousedown', (e) => {
+          if (e.button !== 0) return;
+          e.stopPropagation();
+          nodeMouseDown(e, n.node.id, el);
+        });
+        el.addEventListener('dblclick', (e) => {
+          e.stopPropagation();
+          editingId = n.node.id;
+          selectedId = n.node.id;
+          render();
+        });
+      } else {
+        // 保護中 (read-only): 選択ハイライトだけ反応させ、移動/編集は無効化
+        el.style.cursor = 'default';
+        el.addEventListener('mousedown', (e) => {
+          e.stopPropagation();
+          if (selectedId !== n.node.id) {
+            // 直接 DOM 更新で選択状態だけ反映 (render 不要)
+            const prev = canvas.querySelector(
+              `.mindmap-node.is-selected`,
+            );
+            prev?.classList.remove('is-selected');
+            selectedId = n.node.id;
+            el.classList.add('is-selected');
+          }
+        });
+      }
 
       canvas.append(el);
     }
@@ -795,8 +832,9 @@ function renderMindmapBlock(blockEl, blockIndex, ctx, rootEl) {
     }
   });
 
-  /* Delete/Backspace でも削除可 (フォーカス中のみ) */
+  /* Delete/Backspace でも削除可 (フォーカス中のみ、read-only 時は無視) */
   blockEl.addEventListener('keydown', (e) => {
+    if (!canEdit) return;
     if (
       editingId === null &&
       (e.key === 'Delete' || e.key === 'Backspace') &&
