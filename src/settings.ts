@@ -184,9 +184,9 @@ export const DEFAULT_CALENDAR_PLUGIN_SETTINGS: CalendarPluginSettings = {
   titleFormat: 'YYYY-MM-DD',
 };
 
-export const SIDEBAR_WIDTH_MIN = 160;
+export const SIDEBAR_WIDTH_MIN = 320;
 export const SIDEBAR_WIDTH_MAX = 480;
-export const SIDEBAR_WIDTH_DEFAULT = 240;
+export const SIDEBAR_WIDTH_DEFAULT = 320;
 
 export interface AppSettings {
   /** UI 全体の配色テーマ */

@@ -1313,27 +1313,38 @@ body,
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 
-.calendar-panel__day-num {
-  line-height: 1;
-  /* セル中央から上に寄せる。下のドット表示と視覚的に分離 */
-  transform: translateY(-13px);
+/* 日付の数字とドットをまとめるラッパー。is-today 時にこのラッパーへ
+   背景を当てることで、日付の直下〜ドットの下までを 1 つのバッジで
+   覆えるようにする (gap でドットとの間隔は維持)。 */
+.calendar-panel__day-content {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 10px 8px;
+  border-radius: 6px;
+  min-width: 28px;
+  background: transparent;
 }
 
-/* 既存ノートがある日付の青ドット */
+.calendar-panel__day-num {
+  line-height: 1;
+}
+
+/* 既存ノートがある日付の青ドット (ラッパー内、gap で日付直下に固定間隔)。
+   ノートが無い日でも is-hidden 状態で同じ大きさのプレースホルダを出して
+   おき、日付の縦位置がブレないようにする (visibility のみで非表示)。 */
 .calendar-panel__day-dot {
-  position: absolute;
-  left: 50%;
-  bottom: 13px;
-  transform: translateX(-50%);
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: #3b82f6;
   pointer-events: none;
+  flex-shrink: 0;
 }
-
-.calendar-panel__day.is-today .calendar-panel__day-dot {
-  background: #fff;
+.calendar-panel__day-dot.is-hidden {
+  visibility: hidden;
 }
 
 .calendar-panel__day:hover {
@@ -1341,10 +1352,21 @@ body,
   border-color: var(--accent, #818cf8);
 }
 
+/* 本日: ホバー時に出る枠 (.calendar-panel__day の枠) と同じサイズ感で
+   セル全体にアクセント色の背景を当てる。日付・ドットは flex で
+   中央配置されているのでセルが伸縮してもズレない。 */
 .calendar-panel__day.is-today {
   background: var(--accent, #6366f1);
+  border-color: var(--accent, #6366f1);
   color: #fff;
   font-weight: 700;
+}
+.calendar-panel__day.is-today .calendar-panel__day-content {
+  background: transparent;
+  color: #fff;
+}
+.calendar-panel__day.is-today .calendar-panel__day-dot {
+  background: #fff;
 }
 
 .calendar-panel__day.is-sun {
@@ -1353,13 +1375,13 @@ body,
 .calendar-panel__day.is-sat {
   color: #3b82f6;
 }
-/* 祝祭日: 日曜と同じ赤系で識別。is-today (青背景) 時は白文字で打ち消す */
+/* 祝祭日: 日曜と同じ赤系で識別。is-today は丸の中だけ白文字で打ち消す */
 .calendar-panel__day.is-holiday {
   color: #ef4444;
 }
-.calendar-panel__day.is-today.is-sun,
-.calendar-panel__day.is-today.is-sat,
-.calendar-panel__day.is-today.is-holiday {
+.calendar-panel__day.is-today.is-sun .calendar-panel__day-content,
+.calendar-panel__day.is-today.is-sat .calendar-panel__day-content,
+.calendar-panel__day.is-today.is-holiday .calendar-panel__day-content {
   color: #fff;
 }
 
@@ -1745,6 +1767,16 @@ body,
 .tree__file.is-active ~ .tree__lock-indicator,
 .tree__file-li:has(.tree__file.is-active) .tree__lock-indicator {
   color: var(--accent);
+}
+
+/* セッション内で解錠済み (= 編集可能状態) のノートは赤い開錠アイコンで強調
+   して「うっかり編集しないよう注意」を喚起する。 */
+.tree__lock-indicator.is-unlocked {
+  color: #e53935;
+}
+.tree__file.is-active ~ .tree__lock-indicator.is-unlocked,
+.tree__file-li:has(.tree__file.is-active) .tree__lock-indicator.is-unlocked {
+  color: #ef5350;
 }
 
 /* シークレットインジケータ（ロックの左隣に表示） */

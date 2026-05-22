@@ -70,13 +70,41 @@ function indentLevel(line) {
 }
 
 /** ソース文字列 → ツリー (root node)。空ソース時はデフォルトの root を返す。 */
+/**
+ * ブロック先頭の `<!-- key=val ... -->` をメタデータとして解釈。
+ * サポートキー: panX, panY, scale, height (いずれも数値)。
+ */
+function parseMetadata(rawLines) {
+  const meta = { panX: null, panY: null, scale: null, height: null };
+  let i = 0;
+  while (i < rawLines.length && !rawLines[i].trim()) i++;
+  if (i >= rawLines.length) return { meta, consumed: i };
+  const m = rawLines[i].match(/^\s*<!--\s*(.*?)\s*-->\s*$/);
+  if (!m) return { meta, consumed: i };
+  for (const pair of m[1].split(/\s+/)) {
+    const [k, v] = pair.split('=');
+    if (!k || v === undefined) continue;
+    const n = parseFloat(v);
+    if (!Number.isFinite(n)) continue;
+    if (k === 'panX') meta.panX = n;
+    else if (k === 'panY') meta.panY = n;
+    else if (k === 'scale') meta.scale = n;
+    else if (k === 'height') meta.height = n;
+  }
+  return { meta, consumed: i + 1 };
+}
+
 function parseSource(src) {
-  const lines = (src ?? '')
-    .split(/\r?\n/)
-    .map((l) => l.replace(/\t/g, INDENT))
+  const rawLines = (src ?? '').split(/\r?\n/).map((l) => l.replace(/\t/g, INDENT));
+  const { meta, consumed } = parseMetadata(rawLines);
+  const lines = rawLines
+    .slice(consumed)
     .filter((l) => /^\s*-\s+/.test(l));
   if (lines.length === 0) {
-    return { id: newId(), text: '中心トピック', children: [] };
+    return {
+      tree: { id: newId(), text: '中心トピック', children: [] },
+      meta,
+    };
   }
   // スタック式パース
   const root = { id: newId(), text: '', children: [] };
@@ -92,14 +120,33 @@ function parseSource(src) {
     stack.push({ node, level: lv });
   }
   // 単一トップレベル要素なら、それを root として扱う (より自然)
-  if (root.children.length === 1) return root.children[0];
+  if (root.children.length === 1) return { tree: root.children[0], meta };
   // 複数トップレベルは仮想 root でくくる
-  return { ...root, text: '中心トピック' };
+  return { tree: { ...root, text: '中心トピック' }, meta };
 }
 
-/** ツリー → ソース文字列 */
-function serializeTree(root) {
+/** ツリー → ソース文字列。meta が指定されればコメント行で先頭に挿入 */
+function serializeTree(root, meta) {
   const lines = [];
+  // メタデータ: デフォルトと異なる値だけ書き出す
+  if (meta) {
+    const parts = [];
+    if (Number.isFinite(meta.panX) && Math.round(meta.panX) !== 20) {
+      parts.push(`panX=${Math.round(meta.panX)}`);
+    }
+    if (Number.isFinite(meta.panY) && Math.round(meta.panY) !== 20) {
+      parts.push(`panY=${Math.round(meta.panY)}`);
+    }
+    if (Number.isFinite(meta.scale) && Math.abs(meta.scale - 1) > 0.01) {
+      parts.push(`scale=${meta.scale.toFixed(2)}`);
+    }
+    if (Number.isFinite(meta.height) && Math.round(meta.height) !== 480) {
+      parts.push(`height=${Math.round(meta.height)}`);
+    }
+    if (parts.length > 0) {
+      lines.push(`<!-- ${parts.join(' ')} -->`);
+    }
+  }
   function walk(node, depth) {
     const text = (node.text ?? '').trim() || '無題';
     lines.push(`${INDENT.repeat(depth)}- ${text}`);
@@ -297,7 +344,23 @@ function renderMindmapBlock(blockEl, blockIndex, ctx, rootEl) {
   const canEdit = typeof ctx?.setBody === 'function';
 
   // ローカル状態
-  let tree = parseSource(source);
+  const parsed = parseSource(source);
+  let tree = parsed.tree;
+  // ソース内メタデータコメントから pan/scale/height を復元 (あれば WeakMap state を上書き)
+  if (parsed.meta) {
+    if (Number.isFinite(parsed.meta.panX)) state.panX = parsed.meta.panX;
+    if (Number.isFinite(parsed.meta.panY)) state.panY = parsed.meta.panY;
+    if (Number.isFinite(parsed.meta.scale)) state.scale = parsed.meta.scale;
+    if (Number.isFinite(parsed.meta.height)) state.height = parsed.meta.height;
+    // メタデータがあれば「初期化済み」とみなして自動フィットしない
+    if (
+      parsed.meta.panX != null ||
+      parsed.meta.scale != null ||
+      parsed.meta.height != null
+    ) {
+      state.initialized = true;
+    }
+  }
   // 状態を WeakMap (preview root を key) から取り出す。Preview の本文編集で
   // .mindmap-block 自体が DOM 再生成されてもここの値は引き継がれる。
   const state = getBlockState(rootEl, blockIndex);
@@ -410,7 +473,12 @@ function renderMindmapBlock(blockEl, blockIndex, ctx, rootEl) {
 
   /* 永続化: 現在のツリーをノート本文へ反映 */
   function commit() {
-    const newSource = serializeTree(tree);
+    const newSource = serializeTree(tree, {
+      panX,
+      panY,
+      scale,
+      height: wrapHeight,
+    });
     if (!ctx.setBody || !ctx.getBody) {
       // 編集 API 未提供環境 (例: edit-only モード) では DOM だけ更新
       blockEl.setAttribute(
@@ -587,11 +655,12 @@ function renderMindmapBlock(blockEl, blockIndex, ctx, rootEl) {
   addSiblingBtn.addEventListener('click', addSibling);
   delBtn.addEventListener('click', deleteSelected);
 
-  /* ズーム */
+  /* ズーム (確定ごとに commit して本文へメタデータを書き戻す) */
   function setScale(s) {
     scale = Math.max(0.3, Math.min(2.5, s));
     blockEl.dataset.mindmapScale = String(scale);
     render();
+    if (canEdit) commit();
   }
   zoomOut.addEventListener('click', () => setScale(scale - 0.1));
   zoomIn.addEventListener('click', () => setScale(scale + 0.1));
@@ -762,15 +831,22 @@ function renderMindmapBlock(blockEl, blockIndex, ctx, rootEl) {
 
   window.addEventListener('mouseup', () => {
     if (resizeState) {
+      const moved = resizeState.startH !== wrapHeight;
       resizeState = null;
       resizeHandle.classList.remove('is-active');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
+      // 高さ変更を本文に書き戻す
+      if (canEdit && moved) commit();
       return;
     }
     if (panState) {
+      const moved =
+        panState.startPanX !== panX || panState.startPanY !== panY;
       panState = null;
       canvasWrap.classList.remove('is-panning');
+      // パン位置変更を本文に書き戻す
+      if (canEdit && moved) commit();
       return;
     }
     if (nodeDrag) {

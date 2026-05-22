@@ -69,36 +69,69 @@ function parseLine(line) {
   return { start, end, title, location, color, comment };
 }
 
+/**
+ * ブロック先頭の `<!-- key=val key=val ... -->` 行をメタデータとしてパース。
+ * 現状サポートするキー: `height` (viewport の高さ px)。
+ * メタデータ行がなければ defaults を返す。
+ */
+function parseMetadata(lines) {
+  const meta = { height: null };
+  // 先頭の空行をスキップ
+  let i = 0;
+  while (i < lines.length && !lines[i].trim()) i++;
+  if (i >= lines.length) return { meta, consumed: i };
+  const m = lines[i].match(/^\s*<!--\s*(.*?)\s*-->\s*$/);
+  if (!m) return { meta, consumed: i };
+  for (const pair of m[1].split(/\s+/)) {
+    const [k, v] = pair.split('=');
+    if (k === 'height') {
+      const n = parseFloat(v);
+      if (Number.isFinite(n) && n >= 2 * HOUR_PX && n <= 18 * HOUR_PX) {
+        meta.height = n;
+      }
+    }
+  }
+  return { meta, consumed: i + 1 };
+}
+
 function parseSource(src) {
+  const lines = (src ?? '').split(/\r?\n/);
+  const { meta, consumed } = parseMetadata(lines);
   const list = [];
-  for (const line of (src ?? '').split(/\r?\n/)) {
+  for (let i = consumed; i < lines.length; i++) {
+    const line = lines[i];
     if (!line.trim()) continue;
     const ev = parseLine(line);
     if (ev) list.push(ev);
   }
   list.sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
-  return list;
+  return { events: list, meta };
 }
 
-function serialize(events) {
-  return (
-    events
-      .map((e) => {
-        const title = e.title || '無題';
-        const loc = e.location || '';
-        const color = e.color || '';
-        // コメントは pipe / 改行を含み得るので URL エンコード
-        const comment = e.comment ? encodeURIComponent(e.comment) : '';
-        // 末尾の空フィールドは省略するが、間に値があれば前のフィールドが空でも出力する
-        if (comment)
-          return `${e.start}-${e.end} | ${title} | ${loc} | ${color} | ${comment}`;
-        if (color)
-          return `${e.start}-${e.end} | ${title} | ${loc} | ${color}`;
-        if (loc) return `${e.start}-${e.end} | ${title} | ${loc}`;
-        return `${e.start}-${e.end} | ${title} |`;
-      })
-      .join('\n') + '\n'
-  );
+function serialize(events, meta) {
+  const lines = [];
+  // メタデータ: デフォルト (VIEWPORT_H) と異なる場合のみ書き出す
+  if (meta && Number.isFinite(meta.height) && meta.height !== VIEWPORT_H) {
+    lines.push(`<!-- height=${Math.round(meta.height)} -->`);
+  }
+  for (const e of events) {
+    const title = e.title || '無題';
+    const loc = e.location || '';
+    const color = e.color || '';
+    const comment = e.comment ? encodeURIComponent(e.comment) : '';
+    if (comment) {
+      lines.push(
+        `${e.start}-${e.end} | ${title} | ${loc} | ${color} | ${comment}`,
+      );
+    } else if (color) {
+      lines.push(`${e.start}-${e.end} | ${title} | ${loc} | ${color}`);
+    } else if (loc) {
+      lines.push(`${e.start}-${e.end} | ${title} | ${loc}`);
+    } else {
+      lines.push(`${e.start}-${e.end} | ${title} |`);
+    }
+  }
+  return lines.join('\n') + '\n';
 }
 
 function replaceScheduleBlock(body, blockIndex, newInner) {
@@ -131,6 +164,7 @@ function getBlockState(root, index) {
   if (!st) {
     st = {
       scrollTop: DEFAULT_SCROLL_HOUR * HOUR_PX,
+      viewportH: VIEWPORT_H,
       initialized: false,
     };
     map.set(index, st);
@@ -268,6 +302,10 @@ function ensureStyle() {
 .schedule-toolbar button:hover { background: var(--accent-soft, rgba(86,156,214,0.18)); }
 .schedule-toolbar .schedule-label { flex: 1; font-size: 12px; color: var(--fg-muted, #aaa); }
 .schedule-viewport { position: relative; height: ${VIEWPORT_H}px; overflow-y: auto; overflow-x: hidden; background: var(--bg, #1a1a1a); border: 1px solid var(--border, #444); border-radius: 4px; }
+/* Mindmap/Calendar と同じ下端リサイズハンドル: viewport の高さを上下に伸縮 */
+.schedule-resize-handle { height: 8px; margin-top: 4px; background: transparent; cursor: ns-resize; display: flex; align-items: center; justify-content: center; }
+.schedule-resize-handle::before { content: ''; display: block; width: 40px; height: 4px; background: var(--border, #555); border-radius: 2px; transition: background 0.1s; }
+.schedule-resize-handle:hover::before, .schedule-resize-handle.is-active::before { background: var(--accent, #569cd6); }
 .schedule-canvas { position: relative; height: ${TOTAL_H}px; width: 100%; }
 .schedule-hour-row { position: absolute; left: 0; right: 0; height: ${HOUR_PX}px; border-bottom: 1px solid var(--border, #444); display: flex; }
 .schedule-hour-label { width: ${HOUR_COL_W}px; flex-shrink: 0; padding: 2px 8px 0 8px; font-size: 11px; color: var(--fg-muted, #888); text-align: right; box-sizing: border-box; border-right: 1px solid var(--border, #444); }
@@ -334,8 +372,13 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
   const source = decodeURIComponent(
     blockEl.getAttribute('data-schedule-source') ?? '',
   );
-  let events = parseSource(source);
+  const parsed = parseSource(source);
+  let events = parsed.events;
   const state = getBlockState(rootEl, blockIndex);
+  // ソース内のメタデータコメントから viewport 高さを復元 (あれば優先)
+  if (parsed.meta?.height != null) {
+    state.viewportH = parsed.meta.height;
+  }
 
   // 編集可否: ctx.setBody が無い時は read-only
   const canEdit = typeof ctx?.setBody === 'function';
@@ -365,6 +408,54 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
   const canvas = document.createElement('div');
   canvas.className = 'schedule-canvas';
   viewport.append(canvas);
+  // 保存された viewport 高さを反映 (なければデフォルトの VIEWPORT_H)
+  viewport.style.height = (state.viewportH || VIEWPORT_H) + 'px';
+
+  // 下端のドラッグハンドル: viewport の高さを上下にリサイズする
+  const resizeHandle = document.createElement('div');
+  resizeHandle.className = 'schedule-resize-handle';
+  resizeHandle.setAttribute('role', 'separator');
+  resizeHandle.setAttribute('aria-orientation', 'horizontal');
+  resizeHandle.title = 'ドラッグで表示領域の高さを変更';
+  let resizeSession = null;
+  resizeHandle.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    resizeSession = {
+      startY: e.clientY,
+      startH:
+        parseFloat(viewport.style.height) ||
+        state.viewportH ||
+        VIEWPORT_H,
+    };
+    resizeHandle.classList.add('is-active');
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+    const onMove = (e2) => {
+      if (!resizeSession) return;
+      const next = resizeSession.startH + (e2.clientY - resizeSession.startY);
+      // 2 時間〜18 時間相当 (120-1080px) の範囲でクランプ
+      const clamped = Math.min(
+        18 * HOUR_PX,
+        Math.max(2 * HOUR_PX, next),
+      );
+      viewport.style.height = clamped + 'px';
+      state.viewportH = clamped;
+    };
+    const onUp = () => {
+      const moved = resizeSession?.startH !== state.viewportH;
+      resizeSession = null;
+      resizeHandle.classList.remove('is-active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      // 高さを実際に変更した場合のみ本文へメタデータコメントを書き戻す
+      if (moved) commit();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
 
   // 24 時間ぶんの行を生成 (時間ラベル + クリック領域)
   for (let h = 0; h < 24; h++) {
@@ -757,7 +848,7 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
 
   // ----- ボディ書き戻し -----
   function commit() {
-    const src = serialize(events);
+    const src = serialize(events, { height: state.viewportH });
     if (!ctx?.setBody || !ctx?.getBody) {
       blockEl.setAttribute(
         'data-schedule-source',
@@ -786,7 +877,7 @@ function renderScheduleBlock(blockEl, blockIndex, ctx, rootEl) {
   });
 
   // ----- 組み立て -----
-  blockEl.append(toolbar, viewport);
+  blockEl.append(toolbar, viewport, resizeHandle);
   renderEvents();
 
   // ----- スクロール位置の保持 -----

@@ -56,6 +56,11 @@ interface Props {
    */
   onHistorySelect?: (id: string) => void;
   /**
+   * セッション内で保護パスワード入力により解錠されたノート ID の集合。
+   * 含まれていれば保護アイコンを「解錠状態」に切り替える。
+   */
+  unlockedNoteIds?: ReadonlySet<string>;
+  /**
    * ダブルクリックでノートを「ピン留め」状態で開く。
    * App 側で previewTabId 経由の差し替え対象から外し、`📍` マークを付ける。
    * 未指定なら通常クリックと同じ扱い。
@@ -138,6 +143,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
     activeId,
     onSelect,
     onHistorySelect,
+    unlockedNoteIds,
     onPinSelect,
     onCreateNote,
     onCreateNoteInFolder,
@@ -822,6 +828,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
                 activeId={activeId}
                 onSelect={onSelect}
                 onPinSelect={onPinSelect}
+                unlockedNoteIds={unlockedNoteIds}
                 isExpanded={isExpanded}
                 onToggle={toggle}
                 onOpenFileMenu={openFileMenu}
@@ -914,6 +921,8 @@ interface TreeViewProps {
   onSelect: (id: string) => void;
   /** ダブルクリック時のピン留めオープン用ハンドラ (任意) */
   onPinSelect?: (id: string) => void;
+  /** 解錠済ノート ID 集合 (アイコン表示切替に使う) */
+  unlockedNoteIds?: ReadonlySet<string>;
   isExpanded: (path: string) => boolean;
   onToggle: (path: string) => void;
   onOpenFileMenu: (file: FileItem, e: React.MouseEvent) => void;
@@ -976,6 +985,7 @@ function TreeView({
   activeId,
   onSelect,
   onPinSelect,
+  unlockedNoteIds,
   isExpanded,
   onToggle,
   onOpenFileMenu,
@@ -1047,6 +1057,7 @@ function TreeView({
                   activeId={activeId}
                   onSelect={onSelect}
                   onPinSelect={onPinSelect}
+                  unlockedNoteIds={unlockedNoteIds}
                   isExpanded={isExpanded}
                   onToggle={onToggle}
                   onOpenFileMenu={onOpenFileMenu}
@@ -1139,15 +1150,27 @@ function TreeView({
                 <SecretSmallIcon />
               </span>
             )}
-            {isProtected && (
-              <span
-                className="tree__lock-indicator"
-                title={t.sidebar.protectedIndicator}
-                aria-label={t.sidebar.protectedIndicator}
-              >
-                <LockSmallIcon />
-              </span>
-            )}
+            {isProtected && (() => {
+              // セッション内で解錠済みなら開錠アイコンへ切替
+              const isUnlocked = unlockedNoteIds?.has(f.id) === true;
+              return (
+                <span
+                  className={`tree__lock-indicator ${isUnlocked ? 'is-unlocked' : ''}`}
+                  title={
+                    isUnlocked
+                      ? `${t.sidebar.protectedIndicator} (解錠中)`
+                      : t.sidebar.protectedIndicator
+                  }
+                  aria-label={
+                    isUnlocked
+                      ? `${t.sidebar.protectedIndicator} (解錠中)`
+                      : t.sidebar.protectedIndicator
+                  }
+                >
+                  {isUnlocked ? <UnlockSmallIcon /> : <LockSmallIcon />}
+                </span>
+              );
+            })()}
             <button
               type="button"
               className="tree__menu-btn"
@@ -1313,6 +1336,26 @@ function UnlockIcon() {
       fill="none"
       stroke="currentColor"
       strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3.2" y="7" width="9.6" height="7" rx="1.2" />
+      <path d="M5.2 7 V4.8 a2.8 2.8 0 0 1 5.6 0" />
+    </svg>
+  );
+}
+
+/** ファイル行用 12px の解錠アイコン (LockSmallIcon と寸法を揃える) */
+function UnlockSmallIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"

@@ -267,13 +267,20 @@ function CalendarPanel({ notes, settings, onSelectNote, onCreateNote }) {
             onClick: () => handleCellClick(cell),
             title,
           },
-          h('span', { className: 'calendar-panel__day-num' }, cell.day),
-          cell.hasNote
-            ? h('span', {
-                className: 'calendar-panel__day-dot',
-                'aria-label': i18n.hasNoteLabel,
-              })
-            : null,
+          h(
+            'span',
+            { className: 'calendar-panel__day-content' },
+            h('span', { className: 'calendar-panel__day-num' }, cell.day),
+            // ノート有無に関係なく常にドット要素を出して縦方向のレイアウトを
+            // 揃える (ノートが無い日は visibility: hidden で見た目だけ消す)。
+            h('span', {
+              className:
+                'calendar-panel__day-dot' +
+                (cell.hasNote ? '' : ' is-hidden'),
+              'aria-label': cell.hasNote ? i18n.hasNoteLabel : undefined,
+              'aria-hidden': cell.hasNote ? undefined : true,
+            }),
+          ),
         );
       }),
     ),

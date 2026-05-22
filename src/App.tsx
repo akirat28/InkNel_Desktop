@@ -441,6 +441,15 @@ export default function App() {
    */
   const skipHistoryRecordForRef = useRef<string | null>(null);
 
+  /**
+   * 「解錠後に実際に編集 (body / meta) が走ったかどうか」を追跡する集合。
+   * 別ノートへ切替えた瞬間に未編集ノートは自動的に再ロックする方針なので、
+   * このセットに居ない解錠ノートは selectNote で removeFromUnlocked される。
+   * 編集発生時 (handleBodyChange / scheduleMetaSave) に追加され、
+   * 再ロック時 (selectNote の手前 or pwd 再解錠時) にクリアされる。
+   */
+  const editedAfterUnlockRef = useRef<Set<string>>(new Set());
+
   const handleClearOpenHistory = useCallback(() => {
     setOpenHistory([]);
     void persistOpenHistory([]);
@@ -1149,6 +1158,29 @@ export default function App() {
 
       await flushPendingSaves();
       const loadedBody = await window.api.notes.readBody(id);
+
+      // ----- 「未編集の解錠ノート」を別ノート遷移で再ロック -----
+      // 保護ノートを解錠 → 編集せず別ノートへ切替えた場合、保護状態へ戻す
+      // (= サイドバーの錠前アイコンが赤→白に戻る)。
+      // 自分自身への遷移、認証フロー (bypassLockChecks) では何もしない。
+      const prevId = activeId;
+      if (
+        prevId !== null &&
+        prevId !== id &&
+        !bypassLockChecks &&
+        unlockedNoteIds.has(prevId) &&
+        !editedAfterUnlockRef.current.has(prevId)
+      ) {
+        setUnlockedNoteIds((prev) => {
+          if (!prev.has(prevId)) return prev;
+          const next = new Set(prev);
+          next.delete(prevId);
+          return next;
+        });
+      }
+      // 切替先の編集追跡もリセット (新ノートで編集すれば再度追加される)
+      editedAfterUnlockRef.current.delete(id);
+
       setActiveId(id);
       setEditingTitle(meta.title);
       setEditingFolder(meta.folder);
@@ -1277,6 +1309,8 @@ export default function App() {
     [
       notes,
       unlockedSecretIds,
+      unlockedNoteIds,
+      activeId,
       settings.shareProvider,
       settings.openNoteInNewTab,
       previewTabId,
@@ -1346,6 +1380,8 @@ export default function App() {
       // 明示的に履歴トップへ繰り上げる。既にトップなら recordNoteOpen 側で
       // no-op になるため毎キーストロークで呼んでも安全。
       recordNoteOpen(activeId);
+      // 解錠状態のノートを「編集した」と記録 (別ノートに切替えても再ロックしない)
+      editedAfterUnlockRef.current.add(activeId);
       pendingBody.current = { id: activeId, body: next };
       if (bodyTimer.current) clearTimeout(bodyTimer.current);
       bodyTimer.current = setTimeout(async () => {
@@ -1373,6 +1409,8 @@ export default function App() {
       );
       // 履歴からの開封 → 編集 のときに履歴トップへ繰り上げる (body 編集と同じ)
       recordNoteOpen(activeId);
+      // 解錠状態のノートを「編集した」と記録 (別ノートに切替えても再ロックしない)
+      editedAfterUnlockRef.current.add(activeId);
       pendingMeta.current = { id: activeId, title, folder, tags };
       if (metaTimer.current) clearTimeout(metaTimer.current);
       metaTimer.current = setTimeout(async () => {
@@ -2689,6 +2727,9 @@ export default function App() {
       case 'unlock-edit': {
         if (activeId) {
           setUnlockedNoteIds((prev) => new Set(prev).add(activeId));
+          // 新たに解錠した直後は「未編集」状態として扱う
+          // (これで「解錠 → 編集せず別ノート」で再ロックされる)
+          editedAfterUnlockRef.current.delete(activeId);
           setView('edit');
         }
         setPasswordPurpose(null);
@@ -2841,6 +2882,7 @@ export default function App() {
             skipHistoryRecordForRef.current = id;
             void selectNote(id);
           }}
+          unlockedNoteIds={unlockedNoteIds}
           onPinSelect={(id) =>
             void selectNote(id, undefined, false, { pin: true })
           }
