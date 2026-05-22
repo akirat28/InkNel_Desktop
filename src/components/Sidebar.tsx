@@ -51,6 +51,11 @@ interface Props {
   activeId: string | null;
   onSelect: (id: string) => void;
   /**
+   * 履歴パネル専用の選択ハンドラ。未指定なら onSelect にフォールバック。
+   * App 側で「履歴をクリックしただけでは履歴順を動かさない」処理を行う想定。
+   */
+  onHistorySelect?: (id: string) => void;
+  /**
    * ダブルクリックでノートを「ピン留め」状態で開く。
    * App 側で previewTabId 経由の差し替え対象から外し、`📍` マークを付ける。
    * 未指定なら通常クリックと同じ扱い。
@@ -132,6 +137,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
     extraFolders,
     activeId,
     onSelect,
+    onHistorySelect,
     onPinSelect,
     onCreateNote,
     onCreateNoteInFolder,
@@ -863,7 +869,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
             entries={openHistory}
             notes={notes}
             activeId={activeId}
-            onSelect={onSelect}
+            onSelect={onHistorySelect ?? onSelect}
             onClear={onClearOpenHistory}
           />
         ) : pluginSidebarPanel ? (

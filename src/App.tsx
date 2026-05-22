@@ -415,10 +415,12 @@ export default function App() {
 
   // ノート開封履歴: 同一 noteId は最新だけ残す。historyLimit でトリム。
   // settings.historyEnabled が OFF なら記録しない。
+  // 既にトップにいる場合は no-op (編集中に毎キーストロークで呼ばれても安全)。
   const recordNoteOpen = useCallback(
     (noteId: string) => {
       if (!settings.historyEnabled) return;
       setOpenHistory((current) => {
+        if (current[0]?.noteId === noteId) return current;
         const filtered = current.filter((e) => e.noteId !== noteId);
         const next = [
           { noteId, openedAt: Date.now() },
@@ -431,15 +433,30 @@ export default function App() {
     [settings.historyEnabled, settings.historyLimit, persistOpenHistory],
   );
 
+  /**
+   * 履歴パネルから選択された noteId を一時的に保持する ref。
+   * activeId 変更を検知する useEffect 側で、この id と一致する遷移は
+   * 「履歴クリック由来」なので履歴に再記録しない (順序を保つ)。
+   * 編集が発生したら recordNoteOpen を明示的に呼んでトップへ繰り上げる。
+   */
+  const skipHistoryRecordForRef = useRef<string | null>(null);
+
   const handleClearOpenHistory = useCallback(() => {
     setOpenHistory([]);
     void persistOpenHistory([]);
   }, [persistOpenHistory]);
 
   // activeId が変わるたびに開封履歴を記録（historyEnabled=true のときのみ）。
+  // ただし「履歴パネルから直接クリックで開いた」場合は skipHistoryRecordForRef
+  // と一致するので、その一度だけ記録をスキップ (履歴の順序が動かないようにする)。
   // recordNoteOpen 内で OFF なら早期 return するため、ここで活性判定は不要。
   useEffect(() => {
     if (!activeId) return;
+    if (skipHistoryRecordForRef.current === activeId) {
+      // 履歴クリックでの遷移 → 記録しない。次回以降のため ref はクリア。
+      skipHistoryRecordForRef.current = null;
+      return;
+    }
     recordNoteOpen(activeId);
   }, [activeId, recordNoteOpen]);
 
@@ -1325,6 +1342,10 @@ export default function App() {
       setPinnedTabIds((prev) =>
         prev.includes(activeId) ? prev : [...prev, activeId],
       );
+      // 履歴から開いただけでは履歴順を動かさない方針なので、編集発生時に
+      // 明示的に履歴トップへ繰り上げる。既にトップなら recordNoteOpen 側で
+      // no-op になるため毎キーストロークで呼んでも安全。
+      recordNoteOpen(activeId);
       pendingBody.current = { id: activeId, body: next };
       if (bodyTimer.current) clearTimeout(bodyTimer.current);
       bodyTimer.current = setTimeout(async () => {
@@ -1337,7 +1358,7 @@ export default function App() {
         setNotes(list);
       }, SAVE_DEBOUNCE_MS);
     },
-    [activeId, previewTabId],
+    [activeId, previewTabId, recordNoteOpen],
   );
 
   const scheduleMetaSave = useCallback(
@@ -1350,6 +1371,8 @@ export default function App() {
       setPinnedTabIds((prev) =>
         prev.includes(activeId) ? prev : [...prev, activeId],
       );
+      // 履歴からの開封 → 編集 のときに履歴トップへ繰り上げる (body 編集と同じ)
+      recordNoteOpen(activeId);
       pendingMeta.current = { id: activeId, title, folder, tags };
       if (metaTimer.current) clearTimeout(metaTimer.current);
       metaTimer.current = setTimeout(async () => {
@@ -1369,7 +1392,7 @@ export default function App() {
         );
       }, SAVE_DEBOUNCE_MS);
     },
-    [activeId, previewTabId],
+    [activeId, previewTabId, recordNoteOpen],
   );
 
   // ファイル名（パス形式）入力の変更ハンドラ。
@@ -2812,6 +2835,12 @@ export default function App() {
           extraFolders={folders}
           activeId={activeId}
           onSelect={(id) => void selectNote(id)}
+          onHistorySelect={(id) => {
+            // 履歴パネルから開いた時は履歴順を維持するため、次の activeId 遷移
+            // での自動 recordNoteOpen をスキップさせる ref を立ててから開く。
+            skipHistoryRecordForRef.current = id;
+            void selectNote(id);
+          }}
           onPinSelect={(id) =>
             void selectNote(id, undefined, false, { pin: true })
           }
