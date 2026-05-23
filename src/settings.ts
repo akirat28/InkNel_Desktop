@@ -288,6 +288,14 @@ export interface AppSettings {
   /** AI チャットの入力欄 (composer textarea) フォントサイズ (px)。プロバイダ共通設定。 */
   aiInputFontSize: FontSize;
   /**
+   * AI へ送信する会話履歴の「ターン数」(= user + assistant のペア数)。
+   * チャットモード: 対話追従性を優先。既定 12 ターン (= 直近 24 メッセージ)。
+   * 編集モード: タスク指向で過去履歴を抑制し、古い応答に引きずられにくく。既定 4 ターン (= 直近 8 メッセージ)。
+   * 最新のユーザーメッセージは必ず含まれる (履歴 + 今回の入力)。
+   */
+  aiChatHistoryTurns: number;
+  aiEditHistoryTurns: number;
+  /**
    * 有効化されているプラグイン ID の配列。
    * `src/plugins/<id>.ts` が存在し、かつここに含まれていれば有効。
    * 配列に未知の ID が混じっていても registry 側で無視される。
@@ -354,6 +362,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiNoteFolder: 'AIノート',
   aiChatFontSize: 12,
   aiInputFontSize: 12,
+  aiChatHistoryTurns: 12,
+  aiEditHistoryTurns: 4,
   enabledPlugins: [],
   removedPlugins: [],
   importedPlugins: [],
@@ -486,6 +496,14 @@ export function parseSettings(raw: Record<string, string>): AppSettings {
       raw['ai.inputFontSize'],
       DEFAULT_SETTINGS.aiInputFontSize,
     ),
+    aiChatHistoryTurns: parseHistoryTurns(
+      raw['ai.chatHistoryTurns'],
+      DEFAULT_SETTINGS.aiChatHistoryTurns,
+    ),
+    aiEditHistoryTurns: parseHistoryTurns(
+      raw['ai.editHistoryTurns'],
+      DEFAULT_SETTINGS.aiEditHistoryTurns,
+    ),
     enabledPlugins: parseEnabledPlugins(
       raw['plugin.enabled'],
       DEFAULT_SETTINGS.enabledPlugins,
@@ -578,6 +596,10 @@ export function settingToRecord<K extends keyof AppSettings>(
       return { key: 'ai.provider', value: String(value) };
     case 'aiProviderSettings':
       return { key: 'ai.providerSettings', value: JSON.stringify(value) };
+    case 'aiChatHistoryTurns':
+      return { key: 'ai.chatHistoryTurns', value: String(value) };
+    case 'aiEditHistoryTurns':
+      return { key: 'ai.editHistoryTurns', value: String(value) };
     case 'aiNoteFolder':
       return { key: 'ai.noteFolder', value: String(value) };
     case 'aiChatFontSize':
@@ -617,6 +639,16 @@ function parseSidebarVisibility(
   fallback: SidebarItemVisibility,
 ): SidebarItemVisibility {
   if (v === 'always' || v === 'hidden' || v === 'hover') return v;
+  return fallback;
+}
+
+/** AI 履歴ターン数: 1〜50 の整数のみ受け付ける (それ以外は fallback) */
+function parseHistoryTurns(v: string | undefined, fallback: number): number {
+  if (!v) return fallback;
+  const n = Number(v);
+  if (Number.isFinite(n) && Number.isInteger(n) && n >= 1 && n <= 50) {
+    return n;
+  }
   return fallback;
 }
 

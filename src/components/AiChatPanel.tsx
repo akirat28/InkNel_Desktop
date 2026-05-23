@@ -143,6 +143,22 @@ interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  /**
+   * 編集モードでこの応答がノート (append / rewrite) を変更した場合の
+   * 直前スナップショット。「戻す」ボタンが押された / チャットが進んだら
+   * クリア (undefined) して非表示にする。
+   */
+  undo?: {
+    noteId: string;
+    previousBody: string;
+  };
+  /**
+   * 「戻す」が実行されたことを UI 上だけ示すためのフラグ。
+   * text 本体には影響を与えず、AI に履歴として送信される際にも
+   * この情報は含めない (含めると AI が「前の編集は取り消されたから
+   * 今回はやらない方が良い」と推測してしまうため)。
+   */
+  wasUndone?: boolean;
 }
 
 interface AiChatAttachment {
@@ -399,6 +415,46 @@ export default function AiChatPanel({
     [],
   );
 
+  /**
+   * 「戻す」ボタンの押下: AI が直前に行ったノート編集を元に戻す。
+   * undo スナップショットの previousBody を rewrite で再書き込みし、
+   * undo を消費したので当該メッセージの undo フィールドを undefined にする。
+   * (チャットが進んだ時点で undo は自動的に消えるため、ここでは
+   *  自分のメッセージだけクリアすれば十分。)
+   */
+  const handleUndoEdit = (messageId: string) => {
+    const target = messages.find((m) => m.id === messageId);
+    if (!target?.undo) return;
+    const snapshot = target.undo;
+    // 現在開いているノートが当時と違うなら、戻し対象のノートが既に切り替わっている。
+    if (activeId !== snapshot.noteId) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: `e-${Date.now()}`,
+          role: 'assistant',
+          text:
+            '戻す対象のノートが現在開かれていません。元に戻すには対象ノートを開いてください。',
+        },
+      ]);
+      return;
+    }
+    onRewriteCurrentNote?.(snapshot.previousBody);
+    setMessages((current) =>
+      current.map((m) =>
+        m.id === messageId
+          ? {
+              ...m,
+              undo: undefined,
+              // wasUndone は UI 専用フラグ。text は壊さない (= AI には注記が
+              // 送信されないので「次の指示」を素直に解釈してくれる)。
+              wasUndone: true,
+            }
+          : m,
+      ),
+    );
+  };
+
   const handleSubmit = async () => {
     const text = draft.trim();
     if ((!text && attachments.length === 0) || busy) return;
@@ -465,8 +521,11 @@ export default function AiChatPanel({
     // ただし AI が末尾に付けるノート操作ディレクティブは UI に出さない
     // （ストリーミング中の部分一致 / 完全一致いずれも非表示）。
     const placeholderId = `a-${requestId}`;
+    // 新しい応答が始まる時点で、過去メッセージに残っている undo は
+    // 「戻せる対象」ではなくなる (チャットが進んだ = 戻し操作が破壊的に
+    // 中間状態を作ってしまう) ので一括クリアして「戻す」ボタンを消す。
     setMessages((current) => [
-      ...current,
+      ...current.map((m) => (m.undo ? { ...m, undo: undefined } : m)),
       { id: placeholderId, role: 'assistant', text: '' },
     ]);
     // ディレクティブを正確にパースするために raw 蓄積も保持
@@ -553,16 +612,29 @@ export default function AiChatPanel({
       // basePrompt は空文字なら送らない（main 側でも trim チェックしている）
       const basePrompt = aiActive.basePrompt.trim();
       const allowNoteActions = chatMode === 'edit';
+      // ===== 履歴トリミング =====
+      // モードに応じてユーザー指定のターン数 (= user+assistant ペア数) で
+      // 履歴を絞り込む。長セッションでのコスト爆発と、古い応答による
+      // 判断揺らぎを抑える。最新のユーザーメッセージは必ず含まれる。
+      const turnLimit =
+        chatMode === 'edit'
+          ? settings.aiEditHistoryTurns
+          : settings.aiChatHistoryTurns;
+      const messageLimit = Math.max(2, turnLimit * 2);
+      const trimmedMessages =
+        nextMessages.length > messageLimit
+          ? nextMessages.slice(-messageLimit)
+          : nextMessages;
       const response = await window.api.ai.chat(
         {
           provider: settings.aiProvider,
           token: aiActive.token,
           endpoint: aiActive.endpoint,
           model: aiActive.model,
-          messages: nextMessages.map((m, i) => ({
+          messages: trimmedMessages.map((m, i) => ({
             role: m.role,
             content:
-              i === nextMessages.length - 1
+              i === trimmedMessages.length - 1
                 ? augmentedLastUserContent
                 : m.text,
           })),
@@ -597,6 +669,10 @@ export default function AiChatPanel({
         ),
       );
       // ディレクティブ実行（失敗はチャットにエラー注記として残す）
+      // undo 用の直前スナップショット: AI が編集を行った場合のみセット
+      const snapshotBodyForUndo = noteBody;
+      const snapshotNoteIdForUndo = activeId;
+      let didEditCurrentNote = false;
       for (const action of actions) {
         try {
           if (action.kind === 'create') {
@@ -619,6 +695,7 @@ export default function AiChatPanel({
               continue;
             }
             onAppendToCurrentNote?.(action.content);
+            didEditCurrentNote = true;
           } else if (action.kind === 'rewrite') {
             if (!activeId) {
               setMessages((current) => [
@@ -645,6 +722,7 @@ export default function AiChatPanel({
               continue;
             }
             onRewriteCurrentNote?.(action.body);
+            didEditCurrentNote = true;
           }
         } catch (actionErr) {
           const msg =
@@ -658,6 +736,23 @@ export default function AiChatPanel({
             },
           ]);
         }
+      }
+      // 実際にノートを編集したときだけ、この応答メッセージに undo
+      // スナップショットを attach する。activeId は実行前のものを使う。
+      if (didEditCurrentNote && snapshotNoteIdForUndo) {
+        setMessages((current) =>
+          current.map((m) =>
+            m.id === placeholderId
+              ? {
+                  ...m,
+                  undo: {
+                    noteId: snapshotNoteIdForUndo,
+                    previousBody: snapshotBodyForUndo,
+                  },
+                }
+              : m,
+          ),
+        );
       }
     } catch (err) {
       // 失敗時はプレースホルダをエラーメッセージで置き換える。
@@ -966,13 +1061,36 @@ export default function AiChatPanel({
           messages.map((message) =>
             message.role === 'assistant' ? (
               // AI 応答は Markdown としてレンダリング
-              <div
-                key={message.id}
-                className="ai-chat__message ai-chat__message--assistant ai-chat__message--md"
-                dangerouslySetInnerHTML={{
-                  __html: md.render(message.text),
-                }}
-              />
+              <div key={message.id} className="ai-chat__message-block">
+                <div
+                  className="ai-chat__message ai-chat__message--assistant ai-chat__message--md"
+                  dangerouslySetInnerHTML={{
+                    __html: md.render(message.text),
+                  }}
+                />
+                {message.undo && (
+                  <div className="ai-chat__undo-row">
+                    <button
+                      type="button"
+                      className="ai-chat__undo-btn"
+                      onClick={() => handleUndoEdit(message.id)}
+                      title="直前のノート編集を取り消す"
+                    >
+                      ↶ 戻す
+                    </button>
+                  </div>
+                )}
+                {message.wasUndone && (
+                  <div
+                    className="ai-chat__undo-row ai-chat__undo-row--done"
+                    aria-label="編集を取り消しました"
+                  >
+                    <span className="ai-chat__undo-note">
+                      ↶ 編集を取り消して元に戻しました
+                    </span>
+                  </div>
+                )}
+              </div>
             ) : (
               // ユーザー入力はプレーンテキスト（pre-wrap で改行保持）
               <div

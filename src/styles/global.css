@@ -2823,6 +2823,50 @@ body,
   border: 1px solid var(--border);
 }
 
+/* AI 応答 + undo ボタンの縦並び。message-block 自体はレイアウト箱で
+   見た目を持たず、内側の .ai-chat__message が従来の見た目を保つ。 */
+.ai-chat__message-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.ai-chat__undo-row {
+  margin-left: 6px;
+}
+.ai-chat__undo-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--fg-muted, #888);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease,
+    border-color 0.12s ease;
+}
+.ai-chat__undo-btn:hover {
+  background: color-mix(in srgb, var(--accent, #6366f1) 12%, transparent);
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent, #6366f1) 40%, var(--border));
+}
+
+/* 「戻す」を実行済みの注記 (ボタンの代わりに表示) */
+.ai-chat__undo-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--fg-muted, #888);
+  font-style: italic;
+  opacity: 0.85;
+}
+
 /* Markdown レンダリングされた AI 応答: HTML 要素ごとに整える */
 .ai-chat__message--md {
   white-space: normal;
@@ -5717,6 +5761,28 @@ body,
   font-size: 12px;
   color: var(--fg-muted);
   line-height: 1.5;
+}
+
+/* 履歴ターン数: 2 つの select を横並び (チャット / 編集) */
+.ai-panel__history-grid {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.ai-panel__history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+}
+.ai-panel__history-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+.ai-panel__history-item .ai-panel__row-select {
+  width: 100%;
 }
 
 /* プロバイダ固有の取得手順注記。通常 desc より少し控えめに表示 */

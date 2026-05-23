@@ -407,6 +407,68 @@ function AiPanel({ settings, onChange }: PanelProps) {
             {t.settings.ai.inputFontSizeDesc}
           </p>
         </div>
+
+        {/* ----- 履歴ターン数 (チャット / 編集モード別) -----
+            ターン = user + assistant のペア数。大きいほど対話追従性は上がるが
+            トークン課金とノイズが増える。編集モードはタスク指向で少なめ推奨。
+            1 つの行カード内に 2 つの select を横並びで配置。 */}
+        <div className="ai-panel__row">
+          <div className="ai-panel__row-label">
+            <span className="ai-panel__row-icon">
+              <RoleIcon />
+            </span>
+            履歴ターン数
+          </div>
+          <div className="ai-panel__history-grid">
+            <label
+              className="ai-panel__history-item"
+              htmlFor="prefs-ai-chat-history-turns"
+            >
+              <span className="ai-panel__history-label">チャットモード</span>
+              <select
+                id="prefs-ai-chat-history-turns"
+                className="ai-panel__row-select"
+                value={String(settings.aiChatHistoryTurns)}
+                onChange={(e) =>
+                  onChange('aiChatHistoryTurns', Number(e.target.value))
+                }
+              >
+                {Array.from({ length: 24 - 6 + 1 }, (_, i) => i + 6).map(
+                  (n) => (
+                    <option key={n} value={String(n)}>
+                      {n} ターン
+                    </option>
+                  ),
+                )}
+              </select>
+            </label>
+            <label
+              className="ai-panel__history-item"
+              htmlFor="prefs-ai-edit-history-turns"
+            >
+              <span className="ai-panel__history-label">編集モード</span>
+              <select
+                id="prefs-ai-edit-history-turns"
+                className="ai-panel__row-select"
+                value={String(settings.aiEditHistoryTurns)}
+                onChange={(e) =>
+                  onChange('aiEditHistoryTurns', Number(e.target.value))
+                }
+              >
+                {Array.from({ length: 8 - 2 + 1 }, (_, i) => i + 2).map((n) => (
+                  <option key={n} value={String(n)}>
+                    {n} ターン
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="ai-panel__row-desc">
+            AI へ送る会話履歴のターン数。1 ターン = user + assistant の往復 1
+            組。チャット: 6〜24 (既定 12)、編集: 2〜8 (既定 4)。大きいほど
+            対話追従性は上がるが、トークン課金と古い応答による揺らぎも増えます。
+          </p>
+        </div>
       </div>
 
       {/* ============================================================
