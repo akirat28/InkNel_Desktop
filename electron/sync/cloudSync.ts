@@ -374,6 +374,7 @@ export async function runSync(
             linkedNoteIds: cloud.linkedNoteIds ?? [],
             createdAt: cloud.createdAt,
             updatedAt: cloud.updatedAt,
+            trashedAt: null,
           },
           body,
         );
@@ -401,6 +402,7 @@ export async function runSync(
               linkedNoteIds: cloud.linkedNoteIds ?? [],
               createdAt: cloud.createdAt,
               updatedAt: cloud.updatedAt,
+              trashedAt: null,
             },
             body,
           );
@@ -538,6 +540,7 @@ export function checkAndSyncSingleNote(
           linkedNoteIds: cloudEntry.linkedNoteIds ?? [],
           createdAt: cloudEntry.createdAt,
           updatedAt: cloudEntry.updatedAt,
+          trashedAt: null,
         },
         body,
       );

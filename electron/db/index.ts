@@ -32,10 +32,14 @@ export function initDb(): Database.Database {
       linked_note_ids TEXT NOT NULL DEFAULT '[]',
       body       TEXT NOT NULL DEFAULT '',
       created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL,
+      /** ゴミ箱に移動された epoch ms (NULL = 通常ノート) */
+      trashed_at INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_notes_folder  ON notes(folder);
     CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at);
+    /* idx_notes_trashed は trashed_at カラムが存在することを前提とするので
+       マイグレーションのあとで作成する (下記参照)。 */
 
     CREATE TABLE IF NOT EXISTS folders (
       path       TEXT PRIMARY KEY,
@@ -75,6 +79,14 @@ export function initDb(): Database.Database {
       `ALTER TABLE notes ADD COLUMN linked_note_ids TEXT NOT NULL DEFAULT '[]'`,
     );
   }
+  if (!cols.find((c) => c.name === 'trashed_at')) {
+    // ゴミ箱機能用カラム (epoch ms、null = 通常ノート)
+    db.exec(`ALTER TABLE notes ADD COLUMN trashed_at INTEGER`);
+  }
+  // 新規 DB / 既存 DB どちらでも trashed_at が確定したあとにインデックスを作る
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_notes_trashed ON notes(trashed_at)`,
+  );
 
   return db;
 }

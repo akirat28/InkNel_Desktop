@@ -123,6 +123,14 @@ interface Props {
     body?: string;
     tags?: string[];
   }) => Promise<NoteMeta>;
+  /** ゴミ箱内ノート一覧 (最下部の「ゴミ箱」セクションで表示) */
+  trashedNotes: NoteMeta[];
+  /** ゴミ箱から復元 (保護ノートは App 側でパスワード確認) */
+  onRestoreNote: (id: string) => void;
+  /** ゴミ箱内ノートを完全に削除 (1 件) */
+  onDeletePermanent: (id: string) => void;
+  /** ゴミ箱を空にする */
+  onEmptyTrash: () => void;
 }
 
 /** 外部から Sidebar を操作するためのハンドル */
@@ -172,9 +180,51 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
     settings,
     onSettingsChange,
     onPluginCreateNote,
+    trashedNotes,
+    onRestoreNote,
+    onDeletePermanent,
+    onEmptyTrash,
   }: Props,
   ref,
 ) {
+  // ゴミ箱セクションの開閉状態
+  const [trashOpen, setTrashOpen] = useState(false);
+
+  /** ゴミ箱ヘッダの右クリック: 「ゴミ箱を空にする」のみ */
+  const openTrashHeaderMenu = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const id = await window.api.ui.showContextMenu({
+      position: { x: e.clientX, y: e.clientY },
+      items: [
+        {
+          id: 'empty',
+          label: 'ゴミ箱を空にする',
+          enabled: trashedNotes.length > 0,
+        },
+      ],
+    });
+    if (id === 'empty') onEmptyTrash();
+  };
+
+  /** ゴミ箱内ノートの右クリック: 復元 / 完全に削除 */
+  const openTrashNoteMenu = async (
+    noteId: string,
+    e: React.MouseEvent,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const id = await window.api.ui.showContextMenu({
+      position: { x: e.clientX, y: e.clientY },
+      items: [
+        { id: 'restore', label: '復元' },
+        { separator: true },
+        { id: 'deletePerm', label: '完全に削除' },
+      ],
+    });
+    if (id === 'restore') onRestoreNote(noteId);
+    else if (id === 'deletePerm') onDeletePermanent(noteId);
+  };
   const t = useT();
 
   // ===== プラグイン由来のサイドバーパネル =====
@@ -816,6 +866,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
           </div>
         )}
         {mode === 'files' ? (
+          <>
           <div
             className={`sidebar__list ${rootDragOver ? 'is-root-dragover' : ''}`}
             onDragOver={handleRootDragOver}
@@ -864,6 +915,62 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
               />
             )}
           </div>
+
+          {/* ===== ゴミ箱セクション (files モード最下部に固定) ===== */}
+          <div className="sidebar__trash">
+            <button
+              type="button"
+              className={`sidebar__trash-header ${trashOpen ? 'is-open' : ''}`}
+              onClick={() => setTrashOpen((v) => !v)}
+              onContextMenu={(e) => void openTrashHeaderMenu(e)}
+              aria-expanded={trashOpen}
+              title="右クリックでメニュー"
+            >
+              <span className="sidebar__trash-caret">
+                {trashOpen ? '▾' : '▸'}
+              </span>
+              <span className="sidebar__trash-icon">
+                <TrashSidebarIcon />
+              </span>
+              <span className="sidebar__trash-label">ゴミ箱</span>
+              {trashedNotes.length > 0 && (
+                <span className="sidebar__trash-count">
+                  {trashedNotes.length}
+                </span>
+              )}
+            </button>
+            {trashOpen && (
+              <ul className="sidebar__trash-list">
+                {trashedNotes.length === 0 ? (
+                  <li className="sidebar__trash-empty">
+                    ゴミ箱は空です
+                  </li>
+                ) : (
+                  trashedNotes.map((n) => (
+                    <li
+                      key={n.id}
+                      className="sidebar__trash-item"
+                      onClick={(e) => {
+                        // ゴミ箱内のノートはクリックで開けない
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onContextMenu={(e) => void openTrashNoteMenu(n.id, e)}
+                      title={`削除日: ${n.trashedAt ? new Date(n.trashedAt).toLocaleString() : ''}`}
+                    >
+                      <span className="sidebar__trash-item-icon">
+                        <TrashFileIcon />
+                      </span>
+                      <span className="sidebar__trash-item-name">
+                        {n.title}
+                      </span>
+                    </li>
+                  ))
+                )}
+              </ul>
+            )}
+          </div>
+          </>
         ) : mode === 'search' ? (
           <SearchPanel
             onSearch={onSearch}
@@ -1313,6 +1420,48 @@ function LockIcon() {
     >
       <rect x="3.2" y="7" width="9.6" height="7" rx="1.2" />
       <path d="M5.2 7 V4.8 a2.8 2.8 0 0 1 5.6 0 V7" />
+    </svg>
+  );
+}
+
+/** ゴミ箱セクションヘッダのアイコン */
+function TrashSidebarIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 4 H13" />
+      <path d="M6 4 V2.5 a0.5 0.5 0 0 1 0.5 -0.5 h3 a0.5 0.5 0 0 1 0.5 0.5 V4" />
+      <path d="M4 4 v9 a1 1 0 0 0 1 1 h6 a1 1 0 0 0 1 -1 V4" />
+      <path d="M7 7 V12 M9 7 V12" />
+    </svg>
+  );
+}
+
+/** ゴミ箱内ノート行用の小さなファイル風アイコン */
+function TrashFileIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 2 h6 L13 5 v9 a0.5 0.5 0 0 1 -0.5 0.5 h-8.5 a0.5 0.5 0 0 1 -0.5 -0.5 V2.5 a0.5 0.5 0 0 1 0.5 -0.5 z" />
+      <path d="M10 2 v3 h3" />
     </svg>
   );
 }

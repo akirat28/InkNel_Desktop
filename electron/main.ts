@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { initDb, closeDb } from './db/index';
 import { getAllSettings, setSetting } from './db/settings';
+import { purgeOldTrash } from './db/notes';
 import { registerIpc } from './ipc';
 import {
   registerInknelImagePrivileged,
@@ -655,6 +656,16 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   initDb();
+  // 起動時にゴミ箱内で 30 日経過したノートを物理削除する。
+  // .md / 共有コピーはゴミ箱送り時点で削除済み。ここでは DB レコードを除去するだけ。
+  try {
+    const ids = purgeOldTrash(30);
+    if (ids.length > 0) {
+      console.log(`[trash] purged ${ids.length} note(s) older than 30 days`);
+    }
+  } catch (err) {
+    console.warn('[trash] startup purge failed:', err);
+  }
   handleInknelImageProtocol();
   handleInknelPluginProtocol();
   registerIpc();

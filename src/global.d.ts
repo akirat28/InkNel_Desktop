@@ -32,7 +32,18 @@ export interface NotesApi {
   importDir(): Promise<
     Array<{ name: string; body: string; subFolder: string }>
   >;
+  /** ゴミ箱へ移動 (実体は残し、復元可能)。.md は保存先から削除される */
   delete(id: string): Promise<void>;
+  /** ゴミ箱内ノート一覧 */
+  listTrashed(): Promise<NoteMeta[]>;
+  /** ゴミ箱から復元 (.md 再書き出し)。保護ノートはパスワード確認後に呼ぶ */
+  restore(id: string): Promise<NoteMeta | null>;
+  /** ゴミ箱を空にする (物理削除)。削除した id 配列を返す */
+  emptyTrash(): Promise<string[]>;
+  /** ゴミ箱内で指定日数以上経過したノートを物理削除 */
+  purgeOldTrash(daysOld: number): Promise<string[]>;
+  /** ゴミ箱内のノートを物理削除 (1 件、ゴミ箱以外には使えない) */
+  deletePermanent(id: string): Promise<void>;
 }
 
 export interface FoldersApi {
@@ -84,6 +95,8 @@ export interface AppControlApi {
    * UI 側で破壊的操作の確認を取った後に呼ぶこと。
    */
   resetAll(): Promise<void>;
+  /** データを触らずアプリを再起動するだけ */
+  relaunch(): Promise<void>;
 }
 
 export interface BackupApi {
@@ -106,6 +119,33 @@ export interface StorageApi {
   getRoot(): Promise<string>;
   /** フォルダ選択ダイアログを開く。キャンセル時は null */
   chooseFolder(): Promise<string | null>;
+  /**
+   * 現在の保存先配下 (notes/ images/ attachments/ plugins/) を
+   * 指定フォルダへコピーしてから設定 `storage.path` を切り替える。
+   * 古いフォルダは残す (安全側)。
+   */
+  migrateTo(
+    targetRoot: string,
+  ): Promise<{ copied: number; skipped: number; newRoot: string }>;
+  /**
+   * DB の notes / folders を空にしてから storage.path を新フォルダへ切替。
+   * 保存先のファイル群はコピーも削除もしない。再起動後は空 DB で起動。
+   */
+  resetAndSet(targetRoot: string): Promise<{ newRoot: string }>;
+  /**
+   * 全ノート本文から参照されていない画像 / 添付ファイル (orphan) の一覧を返す。
+   */
+  scanOrphans(): Promise<
+    Array<{
+      filename: string;
+      kind: 'images' | 'attachments';
+      size: number;
+    }>
+  >;
+  /** 指定した orphan ファイルを削除 (サーバ側でも参照を再チェック) */
+  deleteOrphans(
+    targets: Array<{ filename: string; kind: 'images' | 'attachments' }>,
+  ): Promise<{ deleted: number; failed: number }>;
   /** 保存先フォルダの内容をスキャンして DB との差分を返す（タイムスタンプベース） */
   scan(): Promise<{
     storageRoot: string;

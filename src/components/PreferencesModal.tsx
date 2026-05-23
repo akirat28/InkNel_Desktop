@@ -75,8 +75,7 @@ type CategoryKey =
   | 'storage'
   | 'calendar'
   | 'plugins'
-  | 'backup'
-  | 'restore'
+  | 'maintenance'
   | 'reset'
   | 'about';
 
@@ -108,8 +107,7 @@ export default function PreferencesModal({
       { key: 'storage', label: t.settings.categories.storage },
       { key: 'calendar', label: t.settings.categories.calendar },
       { key: 'plugins', label: t.settings.categories.plugins },
-      { key: 'backup', label: t.settings.categories.backup },
-      { key: 'restore', label: t.settings.categories.restore },
+      { key: 'maintenance', label: t.settings.categories.maintenance },
       { key: 'reset', label: t.settings.categories.reset },
       { key: 'about', label: t.settings.categories.about },
     ],
@@ -185,7 +183,11 @@ export default function PreferencesModal({
               <ProtectionPanel settings={settings} onChange={onChange} />
             )}
             {active === 'storage' && (
-              <StoragePanel settings={settings} onChange={onChange} />
+              <>
+                <StoragePanel settings={settings} onChange={onChange} />
+                <BackupPanel />
+                <RestorePanel />
+              </>
             )}
             {active === 'calendar' && (
               <CalendarPanel settings={settings} onChange={onChange} />
@@ -193,8 +195,7 @@ export default function PreferencesModal({
             {active === 'plugins' && (
               <PluginsPanel settings={settings} onChange={onChange} />
             )}
-            {active === 'backup' && <BackupPanel />}
-            {active === 'restore' && <RestorePanel />}
+            {active === 'maintenance' && <MaintenancePanel />}
             {active === 'reset' && <ResetPanel />}
             {active === 'about' && <AboutPanel />}
           </section>
@@ -316,40 +317,149 @@ function AiPanel({ settings, onChange }: PanelProps) {
     <div className="prefs__section">
       <h3 className="prefs__section-title">{t.settings.categories.ai}</h3>
 
-      {/* ----- プロバイダ選択 (タブ) ----- */}
-      <div
-        className="ai-panel__providers"
-        role="tablist"
-        aria-label={t.settings.ai.provider}
-      >
-        {AI_PROVIDER_OPTIONS.map((o) => {
-          const isActive = settings.aiProvider === o.value;
-          const hasToken =
-            settings.aiProviderSettings[o.value]?.token.trim().length > 0;
-          return (
-            <button
-              key={o.value}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              className={`ai-panel__provider-card ${isActive ? 'is-active' : ''}`}
-              onClick={() => handleProviderChange(o.value)}
-            >
-              <span className="ai-panel__provider-icon">
-                <AiSparkIcon />
-              </span>
-              <span className="ai-panel__provider-name">{o.label}</span>
-              <span className="ai-panel__provider-state">
-                {isActive
-                  ? t.common.selectedSuffix
-                  : hasToken
-                    ? t.settings.ai.tokenSet
-                    : ''}
-              </span>
-            </button>
-          );
-        })}
+      {/* ----- 共通設定 (全プロバイダ共通) -----
+          AI チャットから「ノートに変換」した時の既定保存先フォルダ名 +
+          チャット/入力のフォントサイズ。プロバイダによらず共通なので
+          一番上に配置している。 */}
+      <div className="ai-panel__subhead">
+        <h4 className="ai-panel__subhead-title">
+          {t.settings.ai.commonSection}
+        </h4>
       </div>
+
+      <div className="ai-panel__group">
+        <div className="ai-panel__row">
+          <div className="ai-panel__row-label">
+            <span className="ai-panel__row-icon">
+              <FolderIcon />
+            </span>
+            {t.settings.ai.noteFolderLabel}
+          </div>
+          <input
+            id="prefs-ai-note-folder"
+            type="text"
+            className="ai-panel__row-input"
+            value={settings.aiNoteFolder}
+            placeholder="AIノート"
+            onChange={(e) => onChange('aiNoteFolder', e.target.value)}
+            onBlur={(e) => {
+              // 空欄のまま blur したら既定値に戻す
+              if (!e.target.value.trim()) onChange('aiNoteFolder', 'AIノート');
+            }}
+          />
+          <p className="ai-panel__row-desc">
+            {t.settings.ai.noteFolderDesc}
+          </p>
+        </div>
+
+        {/* チャット表示テキストサイズ (メッセージ吹き出し) */}
+        <div className="ai-panel__row">
+          <div className="ai-panel__row-label">
+            <span className="ai-panel__row-icon">
+              <FontIcon />
+            </span>
+            {t.settings.ai.chatFontSizeLabel}
+          </div>
+          <select
+            id="prefs-ai-chat-font-size"
+            className="ai-panel__row-select"
+            value={String(settings.aiChatFontSize)}
+            onChange={(e) =>
+              onChange('aiChatFontSize', Number(e.target.value) as FontSize)
+            }
+          >
+            {FONT_SIZE_OPTIONS.map((s) => (
+              <option key={s} value={String(s)}>
+                {s} {t.settings.general.fontSizeSuffix}
+              </option>
+            ))}
+          </select>
+          <p className="ai-panel__row-desc">
+            {t.settings.ai.chatFontSizeDesc}
+          </p>
+        </div>
+
+        {/* 入力テキストボックスのフォントサイズ */}
+        <div className="ai-panel__row">
+          <div className="ai-panel__row-label">
+            <span className="ai-panel__row-icon">
+              <FontIcon />
+            </span>
+            {t.settings.ai.inputFontSizeLabel}
+          </div>
+          <select
+            id="prefs-ai-input-font-size"
+            className="ai-panel__row-select"
+            value={String(settings.aiInputFontSize)}
+            onChange={(e) =>
+              onChange('aiInputFontSize', Number(e.target.value) as FontSize)
+            }
+          >
+            {FONT_SIZE_OPTIONS.map((s) => (
+              <option key={s} value={String(s)}>
+                {s} {t.settings.general.fontSizeSuffix}
+              </option>
+            ))}
+          </select>
+          <p className="ai-panel__row-desc">
+            {t.settings.ai.inputFontSizeDesc}
+          </p>
+        </div>
+      </div>
+
+      {/* ============================================================
+          プロバイダ選択カード
+          ============================================================
+          タブで AI を切替 → カード内に接続/モデル/ベースプロンプトを表示。
+          プロバイダごとに独立した設定スライス (aiProviderSettings) を持つので、
+          タブ切替で内容も切り替わる。 */}
+      <div className="ai-card">
+        <div
+          className="ai-card__tabs"
+          role="tablist"
+          aria-label={t.settings.ai.provider}
+        >
+          {AI_PROVIDER_OPTIONS.map((o) => {
+            const isActive = settings.aiProvider === o.value;
+            const hasToken =
+              settings.aiProviderSettings[o.value]?.token.trim().length > 0;
+            return (
+              <button
+                key={o.value}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                className={`ai-card__tab ${isActive ? 'is-active' : ''}`}
+                onClick={() => handleProviderChange(o.value)}
+                title={
+                  hasToken && !isActive
+                    ? `${o.label} (${t.settings.ai.tokenSet})`
+                    : o.label
+                }
+              >
+                <span className="ai-card__tab-icon">
+                  <AiSparkIcon />
+                </span>
+                <span className="ai-card__tab-label">{o.label}</span>
+                {hasToken && (
+                  <span
+                    className="ai-card__tab-dot"
+                    aria-label={t.settings.ai.tokenSet}
+                    title={t.settings.ai.tokenSet}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          className="ai-card__body"
+          role="tabpanel"
+          aria-label={current && AI_PROVIDER_OPTIONS.find(
+            (o) => o.value === settings.aiProvider,
+          )?.label}
+        >
 
       {/* ----- 接続 (Token + Endpoint) — 現在選択中のプロバイダ専用 ----- */}
       <div className="ai-panel__subhead">
@@ -595,94 +705,9 @@ function AiPanel({ settings, onChange }: PanelProps) {
         </div>
       </div>
 
-      {/* ----- 共通設定 (全プロバイダ共通) -----
-          AI チャットから「ノートに変換」した時の既定保存先フォルダ名。
-          確認モーダルでユーザーが上書きも可能。 */}
-      <div className="ai-panel__subhead">
-        <h4 className="ai-panel__subhead-title">
-          {t.settings.ai.commonSection}
-        </h4>
-      </div>
+        </div>{/* /ai-card__body */}
+      </div>{/* /ai-card */}
 
-      <div className="ai-panel__group">
-        <div className="ai-panel__row">
-          <div className="ai-panel__row-label">
-            <span className="ai-panel__row-icon">
-              <FolderIcon />
-            </span>
-            {t.settings.ai.noteFolderLabel}
-          </div>
-          <input
-            id="prefs-ai-note-folder"
-            type="text"
-            className="ai-panel__row-input"
-            value={settings.aiNoteFolder}
-            placeholder="AIノート"
-            onChange={(e) => onChange('aiNoteFolder', e.target.value)}
-            onBlur={(e) => {
-              // 空欄のまま blur したら既定値に戻す
-              if (!e.target.value.trim()) onChange('aiNoteFolder', 'AIノート');
-            }}
-          />
-          <p className="ai-panel__row-desc">
-            {t.settings.ai.noteFolderDesc}
-          </p>
-        </div>
-
-        {/* チャット表示テキストサイズ (メッセージ吹き出し) */}
-        <div className="ai-panel__row">
-          <div className="ai-panel__row-label">
-            <span className="ai-panel__row-icon">
-              <FontIcon />
-            </span>
-            {t.settings.ai.chatFontSizeLabel}
-          </div>
-          <select
-            id="prefs-ai-chat-font-size"
-            className="ai-panel__row-select"
-            value={String(settings.aiChatFontSize)}
-            onChange={(e) =>
-              onChange('aiChatFontSize', Number(e.target.value) as FontSize)
-            }
-          >
-            {FONT_SIZE_OPTIONS.map((s) => (
-              <option key={s} value={String(s)}>
-                {s} {t.settings.general.fontSizeSuffix}
-              </option>
-            ))}
-          </select>
-          <p className="ai-panel__row-desc">
-            {t.settings.ai.chatFontSizeDesc}
-          </p>
-        </div>
-
-        {/* 入力テキストボックスのフォントサイズ */}
-        <div className="ai-panel__row">
-          <div className="ai-panel__row-label">
-            <span className="ai-panel__row-icon">
-              <FontIcon />
-            </span>
-            {t.settings.ai.inputFontSizeLabel}
-          </div>
-          <select
-            id="prefs-ai-input-font-size"
-            className="ai-panel__row-select"
-            value={String(settings.aiInputFontSize)}
-            onChange={(e) =>
-              onChange('aiInputFontSize', Number(e.target.value) as FontSize)
-            }
-          >
-            {FONT_SIZE_OPTIONS.map((s) => (
-              <option key={s} value={String(s)}>
-                {s} {t.settings.general.fontSizeSuffix}
-              </option>
-            ))}
-          </select>
-          <p className="ai-panel__row-desc">
-            {t.settings.ai.inputFontSizeDesc}
-          </p>
-        </div>
-      </div>
     </div>
   );
 }
@@ -1706,9 +1731,6 @@ function TemplatePanel({ settings, onChange }: PanelProps) {
                   setDraft(e.target.value);
                   setSaved(false);
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSave();
-                }}
               />
               <span className="template-panel__slash">/</span>
             </div>
@@ -1770,6 +1792,12 @@ function StoragePanel({ settings, onChange }: PanelProps) {
     type: 'error' | 'ok';
     text: string;
   } | null>(null);
+  // 保存先変更が完了して再起動を促す段階に入ったか。
+  // true のときオーバーレイモーダルが表示され、OK を押すまで他操作不可。
+  const [restartPrompt, setRestartPrompt] = useState<string | null>(null);
+  // フォルダピッカで選んだ後、「DB も初期化するか」を選ぶモーダルの状態。
+  // null のときは非表示。null 以外のときはそのパスで選択待ち。
+  const [pendingTarget, setPendingTarget] = useState<string | null>(null);
 
   const refreshRoot = async () => {
     try {
@@ -1784,37 +1812,17 @@ function StoragePanel({ settings, onChange }: PanelProps) {
     void refreshRoot();
   }, [settings.storagePath]);
 
-  const handleChoose = async () => {
+  /**
+   * 「保存先の変更」ボタン。フォルダ選択ダイアログを開き、選ばれたら
+   * 「DB も初期化するか / DB は保持するか」を選ぶモーダルへ進む。
+   */
+  const handleChangeFolder = async () => {
     setMessage(null);
     setBusy(true);
     try {
       const picked = await window.api.storage.chooseFolder();
       if (!picked) return;
-      onChange('storagePath', picked);
-      setMessage({ type: 'ok', text: t.settings.storage.okFolderChanged });
-    } catch (err) {
-      setMessage({
-        type: 'error',
-        text:
-          t.settings.storage.errChooseFailed +
-          ': ' +
-          (err instanceof Error ? err.message : String(err)),
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleResetDefault = () => {
-    onChange('storagePath', '');
-    setMessage({ type: 'ok', text: t.settings.storage.okResetDefault });
-  };
-
-  const handleOverwriteAll = async () => {
-    if (!window.confirm(t.settings.storage.confirmOverwrite)) return;
-    setBusy(true);
-    setMessage(null);
-    try {
+      // 保留中の保存はフラッシュしておく (どちらの選択肢でも安全側)
       await new Promise<void>((resolve) => {
         window.dispatchEvent(
           new CustomEvent('inknel:flush-pending-saves', {
@@ -1822,22 +1830,12 @@ function StoragePanel({ settings, onChange }: PanelProps) {
           }),
         );
       });
-      const result = await window.api.storage.overwriteAll();
-      setMessage({
-        type: result.failed === 0 ? 'ok' : 'error',
-        text:
-          t.settings.storage.okOverwriteDone.replace(
-            '{{written}}',
-            String(result.written),
-          ) +
-          (result.failed > 0 ? ` / ${result.failed}` : ''),
-      });
+      setPendingTarget(picked);
     } catch (err) {
       setMessage({
         type: 'error',
         text:
-          t.settings.storage.errOverwriteFailed +
-          ': ' +
+          '保存先の変更に失敗しました: ' +
           (err instanceof Error ? err.message : String(err)),
       });
     } finally {
@@ -1845,129 +1843,157 @@ function StoragePanel({ settings, onChange }: PanelProps) {
     }
   };
 
-  const isCustom = settings.storagePath.trim().length > 0;
+  /**
+   * pendingTarget に対し「DB は保持して保存先のみ変更」を実行。
+   * 既存内容を新フォルダにコピー + 設定切替 → 再起動プロンプト。
+   */
+  const handleKeepDbAndMigrate = async () => {
+    if (!pendingTarget) return;
+    const target = pendingTarget;
+    setPendingTarget(null);
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await window.api.storage.migrateTo(target);
+      onChange('storagePath', res.newRoot);
+      setRestartPrompt(
+        `保存先を変更しました (DB は保持)。\n\n新しい保存先:\n${res.newRoot}\n\n反映には再起動が必要です。OK を押すとアプリを再起動します。`,
+      );
+    } catch (err) {
+      setMessage({
+        type: 'error',
+        text:
+          '保存先の変更に失敗しました: ' +
+          (err instanceof Error ? err.message : String(err)),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * pendingTarget に対し「DB も初期化して保存先を変更」を実行。
+   * DB の notes / folders を空にした上で設定を切替 → 再起動プロンプト。
+   */
+  const handleResetDbAndMigrate = async () => {
+    if (!pendingTarget) return;
+    const target = pendingTarget;
+    // 二段階確認 (取り消し不可なので明示的な OK を求める)
+    if (
+      !window.confirm(
+        '本当に DB を初期化しますか?\n\n現在のノート・フォルダはすべて削除され、取り消しできません。\n(保存先フォルダの .md ファイルは残ります)',
+      )
+    ) {
+      return;
+    }
+    setPendingTarget(null);
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await window.api.storage.resetAndSet(target);
+      onChange('storagePath', res.newRoot);
+      setRestartPrompt(
+        `DB を初期化し、保存先を変更しました。\n\n新しい保存先:\n${res.newRoot}\n\n反映には再起動が必要です。OK を押すとアプリを再起動します。`,
+      );
+    } catch (err) {
+      setMessage({
+        type: 'error',
+        text:
+          '保存先の変更に失敗しました: ' +
+          (err instanceof Error ? err.message : String(err)),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <div className="prefs__section">
+    <div className="prefs__section storage-panel">
       <h3 className="prefs__section-title">
         {t.settings.categories.storage}
       </h3>
 
-      {/* ----- ファイル保存先フォルダ ----- */}
-      <div className="storage-panel__subhead storage-panel__subhead--first">
-        <h4 className="storage-panel__subhead-title">
-          {t.settings.storage.sectionFolder}
-        </h4>
-        <span
-          className={`storage-panel__pill storage-panel__pill--${
-            isCustom ? 'custom' : 'default'
-          }`}
+      {/* ----- ヒーロー: 現在の保存先 + 変更ボタン ----- */}
+      <div className="storage-hero">
+        <div className="storage-hero__glow" aria-hidden="true" />
+        <div className="storage-hero__body">
+          <div className="storage-hero__label">
+            <StorageHeroIcon />
+            <span>現在の保存先</span>
+          </div>
+          <div
+            className={`storage-hero__path ${
+              !resolvedRoot ? 'is-loading' : ''
+            }`}
+          >
+            {resolvedRoot || '取得中...'}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="storage-hero__cta"
+          onClick={() => void handleChangeFolder()}
+          disabled={busy}
         >
-          {isCustom
-            ? t.settings.storage.pillCustom
-            : t.settings.storage.pillDefault}
-        </span>
+          <FolderOpenIcon />
+          フォルダを変更
+        </button>
       </div>
 
-      <div className="storage-panel__card">
-        <span className="storage-panel__card-icon">
-          <FolderIcon />
-        </span>
-        <div className="storage-panel__card-body">
-          <span className="storage-panel__card-title">
-            {t.settings.storage.cardTitle}
-          </span>
-          <p className="storage-panel__card-desc">
-            {t.settings.storage.cardDesc}
-          </p>
-
-          <div className="storage-panel__path-row">
-            <span className="storage-panel__path-label">
-              {t.settings.storage.pathConfigured}
-            </span>
-            <span
-              className={`storage-panel__path-value ${
-                !isCustom ? 'storage-panel__path-value--dim' : ''
-              }`}
-            >
-              {isCustom
-                ? settings.storagePath
-                : t.settings.storage.defaultUserdata}
-            </span>
-          </div>
-
-          <div className="storage-panel__path-row">
-            <span className="storage-panel__path-label">
-              {t.settings.storage.pathResolved}
-            </span>
-            <span
-              className={`storage-panel__path-value ${
-                !resolvedRoot ? 'storage-panel__path-value--dim' : ''
-              }`}
-            >
-              {resolvedRoot || t.settings.storage.pathFetching}
-            </span>
-          </div>
-
-          <div className="storage-panel__actions">
-            <button
-              type="button"
-              className="storage-panel__btn"
-              onClick={() => void handleChoose()}
-              disabled={busy}
-            >
-              <FolderOpenIcon />
-              {t.settings.storage.chooseFolder}
-            </button>
-            <button
-              type="button"
-              className="storage-panel__btn storage-panel__btn--ghost"
-              onClick={handleResetDefault}
-              disabled={!isCustom || busy}
-            >
-              {t.settings.storage.resetDefault}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="storage-panel__hint">
-        <span className="storage-panel__hint-icon">
-          <AlertIcon />
-        </span>
-        <span>{t.settings.storage.hintNoAutoMove}</span>
-      </div>
-
-      {/* ----- データ管理 ----- */}
-      <div className="storage-panel__subhead">
-        <h4 className="storage-panel__subhead-title">
-          {t.settings.storage.sectionData}
+      {/* ----- 仕組みの説明: 2 カード横並びで DB / .md を視覚化 ----- */}
+      <div className="storage-explain">
+        <h4 className="storage-explain__title">
+          <SparkleIcon />
+          ノートはどう保存される?
         </h4>
-      </div>
-
-      <div className="storage-panel__card">
-        <span className="storage-panel__card-icon">
-          <UploadIcon />
-        </span>
-        <div className="storage-panel__card-body">
-          <span className="storage-panel__card-title">
-            {t.settings.storage.overwriteTitle}
-          </span>
-          <p className="storage-panel__card-desc">
-            {t.settings.storage.overwriteDesc}
-          </p>
-          <div className="storage-panel__actions">
-            <button
-              type="button"
-              className="storage-panel__btn"
-              onClick={() => void handleOverwriteAll()}
-              disabled={busy}
-            >
-              <UploadIcon />
-              {t.settings.storage.overwriteBtn}
-            </button>
+        <div className="storage-explain__pair">
+          <div className="storage-explain__card storage-explain__card--db">
+            <div className="storage-explain__card-icon">
+              <DatabaseIcon />
+            </div>
+            <div className="storage-explain__card-title">データベース</div>
+            <div className="storage-explain__card-desc">
+              アプリ内で<strong>編集・検索・表示</strong>
+              に使う場所。<br />
+              高速動作のために使われる「真の保管庫」。
+            </div>
+          </div>
+          <div className="storage-explain__arrow" aria-hidden="true">
+            <SyncArrowIcon />
+            <span>自動同期</span>
+          </div>
+          <div className="storage-explain__card storage-explain__card--md">
+            <div className="storage-explain__card-icon">
+              <MarkdownIcon />
+            </div>
+            <div className="storage-explain__card-title">
+              Markdown (.md) ファイル
+            </div>
+            <div className="storage-explain__card-desc">
+              同じ内容を<strong>このフォルダに自動コピー</strong>。
+              <br />
+              他アプリで開いたり共有するための「共有用コピー」。
+            </div>
           </div>
         </div>
+        <p className="storage-explain__caption">
+          <strong>「保存先」</strong>は右側の
+          <strong>.md ファイルを書き出すフォルダ</strong>です。
+        </p>
+      </div>
+
+      {/* ----- クラウド共有のヒント (アクセント色のチップ) ----- */}
+      <div className="storage-tip">
+        <span className="storage-tip__chip">
+          <CloudIcon />
+          クラウド共有
+        </span>
+        <p className="storage-tip__body">
+          保存先を <strong>iCloud Drive</strong> /{' '}
+          <strong>Dropbox</strong> / <strong>Google Drive</strong>{' '}
+          のフォルダに指定すると、複数 PC で同じノートを共有できます。
+          1 台で完結するなら、<strong>既定のまま</strong>でも問題ありません。
+        </p>
       </div>
 
       {message && (
@@ -1978,6 +2004,92 @@ function StoragePanel({ settings, onChange }: PanelProps) {
         >
           {message.type === 'error' ? <AlertIcon /> : <CheckIcon />}
           <span>{message.text}</span>
+        </div>
+      )}
+
+      {pendingTarget !== null && (
+        <div
+          className="storage-panel__restart-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="storage-choice-title"
+        >
+          <div className="storage-panel__restart-modal">
+            <h4
+              id="storage-choice-title"
+              className="storage-panel__restart-title"
+            >
+              DB の扱いを選択してください
+            </h4>
+            <p className="storage-panel__restart-message">
+              新しい保存先:
+              {'\n'}
+              {pendingTarget}
+              {'\n\n'}
+              DB (現在のノート・フォルダ) をどう扱いますか?
+            </p>
+            <div className="storage-panel__choice-actions">
+              <button
+                type="button"
+                className="storage-panel__btn"
+                autoFocus
+                onClick={() => void handleKeepDbAndMigrate()}
+                disabled={busy}
+              >
+                DB は初期化せずに保存先のみ変更
+              </button>
+              <button
+                type="button"
+                className="storage-panel__btn storage-panel__btn--danger"
+                onClick={() => void handleResetDbAndMigrate()}
+                disabled={busy}
+              >
+                DB も初期化してすべてクリア
+              </button>
+              <button
+                type="button"
+                className="storage-panel__btn storage-panel__btn--ghost"
+                onClick={() => setPendingTarget(null)}
+                disabled={busy}
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {restartPrompt !== null && (
+        <div
+          className="storage-panel__restart-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="storage-restart-title"
+        >
+          <div className="storage-panel__restart-modal">
+            <h4
+              id="storage-restart-title"
+              className="storage-panel__restart-title"
+            >
+              再起動が必要です
+            </h4>
+            <p className="storage-panel__restart-message">
+              {restartPrompt}
+            </p>
+            <div className="storage-panel__restart-actions">
+              <button
+                type="button"
+                className="storage-panel__btn"
+                autoFocus
+                onClick={() => {
+                  setRestartPrompt(null);
+                  void window.api.app.relaunch();
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -2264,6 +2376,9 @@ function PluginsPanel({ settings, onChange }: PanelProps) {
 
   // ----- プラグインストア -----
   const [storeState, setStoreState] = useState<StoreState>({ kind: 'idle' });
+  // プラグインストアを開いているか (既定は閉じ、ボタンで開閉)。
+  // 閉じている間はリモートカタログをフェッチしない (帯域節約 + 静かな初期表示)。
+  const [storeOpen, setStoreOpen] = useState(false);
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [downloadedManifests, setDownloadedManifests] = useState<
     Array<{ filename: string; content: unknown }>
@@ -2323,14 +2438,34 @@ function PluginsPanel({ settings, onChange }: PanelProps) {
     }
   };
 
-  // パネルを開いた時に自動的にカタログを取得（「プラグインの取得」を初回押下した状態）
-  // refreshInstalled は handleFetchStore 内部でも呼ばれるので別途は走らせない
+  // パネルを開いた時はローカルの DL 済みファイル状態だけを更新する。
+  // (旧仕様では自動でリモートカタログ取得まで行っていたが、ストアは
+  //  ユーザーが明示的に「プラグインストアを開く」を押した時のみ取得する。)
   useEffect(() => {
-    void handleFetchStore();
-    // 初回マウント限定: handleFetchStore は毎レンダリング再生成されるが
-    // ここで実行したいのは「最初の 1 回だけ」なので依存配列を空にする
+    void refreshInstalled();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ストアを開く / 閉じる。初回オープン時にカタログを取得する。
+  const handleToggleStore = () => {
+    setStoreOpen((open) => {
+      const next = !open;
+      if (next && storeState.kind === 'idle') {
+        void handleFetchStore();
+      }
+      return next;
+    });
+  };
+
+  // モーダル表示中の Esc キーで閉じる
+  useEffect(() => {
+    if (!storeOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setStoreOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [storeOpen]);
 
   // id → DL 済 manifest のファイル名（削除ボタン表示判定用）
   const downloadedById = useMemo(() => {
@@ -2644,75 +2779,8 @@ function PluginsPanel({ settings, onChange }: PanelProps) {
     <div className="prefs__section">
       <h3 className="prefs__section-title">プラグイン</h3>
 
-      {/* ===== プラグインカタログ URL の管理 (最上部に配置) ===== */}
+      {/* ===== インストール済み (基本ビュー、最上部に配置) ===== */}
       <div className="plugins-panel__subhead plugins-panel__subhead--first">
-        <h4 className="plugins-panel__subhead-title">プラグインカタログ URL</h4>
-      </div>
-      <ul className="plugins-panel__url-list">
-        <li className="plugins-panel__url-item plugins-panel__url-item--default">
-          <span
-            className="plugins-panel__url-text"
-            title={PLUGIN_CATALOG_URL}
-          >
-            {PLUGIN_CATALOG_URL}
-          </span>
-          <span className="plugins-panel__url-tag">既定(変更不可)</span>
-        </li>
-        {settings.pluginCatalogUrls.map((u) => (
-          <li key={u} className="plugins-panel__url-item">
-            <span className="plugins-panel__url-text" title={u}>
-              {u}
-            </span>
-            <button
-              type="button"
-              className="plugins-panel__btn plugins-panel__btn--ghost"
-              onClick={() => handleRemoveCatalogUrl(u)}
-              title="この URL を削除"
-              aria-label="この URL を削除"
-            >
-              削除
-            </button>
-          </li>
-        ))}
-      </ul>
-      <div className="plugins-panel__url-add">
-        <input
-          type="url"
-          className="plugins-panel__url-input"
-          value={newCatalogUrl}
-          placeholder="https://example.com/plugins.json"
-          onChange={(e) => {
-            setNewCatalogUrl(e.target.value);
-            if (catalogUrlError) setCatalogUrlError(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              handleAddCatalogUrl();
-            }
-          }}
-        />
-        <button
-          type="button"
-          className="plugins-panel__btn plugins-panel__btn--primary"
-          onClick={handleAddCatalogUrl}
-          disabled={newCatalogUrl.trim().length === 0}
-        >
-          追加
-        </button>
-      </div>
-      {catalogUrlError && (
-        <p className="plugins-panel__url-error" role="alert">
-          {catalogUrlError}
-        </p>
-      )}
-      <p className="plugins-panel__url-hint">
-        追加 URL の plugins.json から取得した結果は、既定カタログのものとマージされます。
-        既定カタログと同じ ID のプラグインは既定側が優先されます。
-      </p>
-
-      {/* ===== インストール済み ===== */}
-      <div className="plugins-panel__subhead">
         <h4 className="plugins-panel__subhead-title">
           インストール済み
           <span className="plugins-panel__subhead-count">
@@ -2817,95 +2885,189 @@ function PluginsPanel({ settings, onChange }: PanelProps) {
         </div>
       )}
 
-      {/*
-        ===== プラグイン開発モード =====
-        `import.meta.env.DEV` は Vite が `npm run dev` の dev サーバー実行時に
-        true、`npm run build` 済みの本番パッケージでは false に展開する定数。
-        本番ビルドでは静的に false 評価され、このブロック全体がツリーシェイクで
-        削除される（ユーザー設定での暴露も含めて完全に隠れる）。
-      */}
-      {import.meta.env.DEV && (
-        <>
-          <div className="plugins-panel__subhead">
-            <h4 className="plugins-panel__subhead-title">プラグイン開発</h4>
-          </div>
-          <div className="prefs__field">
-            <div className="prefs__field-main">
-              <label className="prefs__field-label">プラグイン開発モード</label>
-              <p className="prefs__field-desc">
-                ON にすると <code>inknel-plugin://</code> プロトコルが
-                <code>userData/plugins/</code> ではなくプロジェクト直下の
-                <code>plugin-dev/plugins/</code> を直接配信します。ダウンロード /
-                インポート不要で、<code>plugin-dev/plugins/&lt;id&gt;/</code>{' '}
-                の中のファイルを編集して Cmd+R すれば即反映されます。
-                開発 (npm run dev) 時のみ有効。production パッケージでは無視されます。
-              </p>
-            </div>
-            <ToggleSwitch
-              checked={settings.pluginDevMode}
-              onChange={(v) => onChange('pluginDevMode', v)}
-              ariaLabel="プラグイン開発モード"
-            />
-          </div>
-          {settings.pluginDevMode && (
-            <p className="prefs__field-desc" style={{ marginTop: 8 }}>
-              ✓ 開発モード ON — ロード先:{' '}
-              <code>&lt;project&gt;/plugin-dev/plugins/&lt;id&gt;/</code>
-            </p>
-          )}
-        </>
-      )}
-
-      {/* ===== プラグインストア ===== */}
+      {/* ===== プラグインストアを開くボタン (押下 → モーダル表示) ===== */}
       <div className="plugins-panel__subhead">
-        <h4 className="plugins-panel__subhead-title">
-          プラグインストア
-          {storeState.kind === 'loaded' && (
-            <span className="plugins-panel__subhead-count">
-              {storeState.rows.length}
-            </span>
-          )}
-        </h4>
+        <h4 className="plugins-panel__subhead-title">プラグインストア</h4>
         <div className="plugins-panel__subhead-actions">
           <button
             type="button"
             className="plugins-panel__btn plugins-panel__btn--primary"
-            onClick={() => void handleFetchStore()}
-            disabled={storeState.kind === 'loading'}
+            onClick={handleToggleStore}
+            aria-haspopup="dialog"
+            aria-expanded={storeOpen}
           >
-            {storeState.kind === 'loading' ? <Spinner /> : <RefreshIcon />}
-            {storeState.kind === 'loading' ? '取得中…' : '取得'}
+            プラグインストアを開く
           </button>
         </div>
       </div>
 
-      {storeState.kind === 'loading' && (
-        <div className="plugins-panel__loading">
-          <Spinner />
-          カタログを取得しています…
-        </div>
-      )}
+      {/* ===== プラグインストアモーダル ===== */}
+      {storeOpen && (
+        <div
+          className="plugin-store-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="plugin-store-title"
+          onClick={(e) => {
+            // 背景クリックで閉じる (モーダル内部は伝播しないように本体側で stopPropagation)
+            if (e.target === e.currentTarget) setStoreOpen(false);
+          }}
+        >
+          <div
+            className="plugin-store-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="plugin-store-modal__header">
+              <h3
+                id="plugin-store-title"
+                className="plugin-store-modal__title"
+              >
+                プラグインストア
+                {storeState.kind === 'loaded' && (
+                  <span className="plugins-panel__subhead-count">
+                    {storeState.rows.length}
+                  </span>
+                )}
+              </h3>
+              <div className="plugin-store-modal__header-actions">
+                <button
+                  type="button"
+                  className="plugins-panel__btn plugins-panel__btn--ghost"
+                  onClick={() => void handleFetchStore()}
+                  disabled={storeState.kind === 'loading'}
+                  title="カタログを再取得"
+                >
+                  {storeState.kind === 'loading' ? <Spinner /> : <RefreshIcon />}
+                  {storeState.kind === 'loading' ? '取得中…' : '更新'}
+                </button>
+                <button
+                  type="button"
+                  className="plugin-store-modal__close"
+                  onClick={() => setStoreOpen(false)}
+                  aria-label="閉じる"
+                  title="閉じる (Esc)"
+                >
+                  ×
+                </button>
+              </div>
+            </header>
 
-      {storeState.kind === 'not_found' && (
-        <div className="plugins-panel__empty">
-          <p className="plugins-panel__empty-title">
-            プラグインが見つかりません
-          </p>
-          <p className="plugins-panel__empty-hint">
-            カタログ URL に到達できませんでした
-          </p>
-        </div>
-      )}
+            <div className="plugin-store-modal__body">
+              {/* ----- プラグインカタログ URL の管理 ----- */}
+              <div className="plugins-panel__subhead plugins-panel__subhead--first">
+                <h4 className="plugins-panel__subhead-title">
+                  プラグインカタログ URL
+                </h4>
+              </div>
+              <ul className="plugins-panel__url-list">
+                <li className="plugins-panel__url-item plugins-panel__url-item--default">
+                  <span
+                    className="plugins-panel__url-text"
+                    title={PLUGIN_CATALOG_URL}
+                  >
+                    {PLUGIN_CATALOG_URL}
+                  </span>
+                  <span className="plugins-panel__url-tag">既定(変更不可)</span>
+                </li>
+                {settings.pluginCatalogUrls.map((u) => (
+                  <li key={u} className="plugins-panel__url-item">
+                    <span className="plugins-panel__url-text" title={u}>
+                      {u}
+                    </span>
+                    <button
+                      type="button"
+                      className="plugins-panel__btn plugins-panel__btn--ghost"
+                      onClick={() => handleRemoveCatalogUrl(u)}
+                      title="この URL を削除"
+                      aria-label="この URL を削除"
+                    >
+                      削除
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="plugins-panel__url-add">
+                <input
+                  type="url"
+                  className="plugins-panel__url-input"
+                  value={newCatalogUrl}
+                  placeholder="https://example.com/plugins.json"
+                  onChange={(e) => {
+                    setNewCatalogUrl(e.target.value);
+                    if (catalogUrlError) setCatalogUrlError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddCatalogUrl();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="plugins-panel__btn plugins-panel__btn--primary"
+                  onClick={handleAddCatalogUrl}
+                  disabled={newCatalogUrl.trim().length === 0}
+                >
+                  追加
+                </button>
+              </div>
+              {catalogUrlError && (
+                <p className="plugins-panel__url-error" role="alert">
+                  {catalogUrlError}
+                </p>
+              )}
+              <p className="plugins-panel__url-hint">
+                追加 URL の plugins.json から取得した結果は、既定カタログのものと
+                マージされます。既定カタログと同じ ID のプラグインは既定側が優先されます。
+              </p>
 
-      {storeState.kind === 'loaded' && storeState.rows.length === 0 && (
-        <div className="plugins-panel__empty">
-          <p className="plugins-panel__empty-title">
-            利用可能なプラグインがありません
-          </p>
-        </div>
-      )}
+              {/* ----- ストア結果 ----- */}
+              <div className="plugins-panel__subhead">
+                <h4 className="plugins-panel__subhead-title">
+                  導入可能なプラグイン
+                </h4>
+              </div>
 
-      {storeState.kind === 'loaded' && storeState.rows.length > 0 && (
+              {storeState.kind === 'idle' && (
+                <div className="plugins-panel__empty">
+                  <p className="plugins-panel__empty-title">
+                    カタログを取得していません
+                  </p>
+                  <p className="plugins-panel__empty-hint">
+                    右上の「更新」ボタンを押してください
+                  </p>
+                </div>
+              )}
+
+              {storeState.kind === 'loading' && (
+                <div className="plugins-panel__loading">
+                  <Spinner />
+                  カタログを取得しています…
+                </div>
+              )}
+
+              {storeState.kind === 'not_found' && (
+                <div className="plugins-panel__empty">
+                  <p className="plugins-panel__empty-title">
+                    プラグインが見つかりません
+                  </p>
+                  <p className="plugins-panel__empty-hint">
+                    カタログ URL に到達できませんでした
+                  </p>
+                </div>
+              )}
+
+              {storeState.kind === 'loaded' &&
+                storeState.rows.length === 0 && (
+                  <div className="plugins-panel__empty">
+                    <p className="plugins-panel__empty-title">
+                      利用可能なプラグインがありません
+                    </p>
+                  </div>
+                )}
+
+              {storeState.kind === 'loaded' && storeState.rows.length > 0 && (
         <div className="plugins-panel__list">
           {storeState.rows.map((row) => {
             const declaredFiles = Array.isArray(row.manifest?.files)
@@ -2997,6 +3159,10 @@ function PluginsPanel({ settings, onChange }: PanelProps) {
             );
           })}
         </div>
+              )}
+            </div>{/* /plugin-store-modal__body */}
+          </div>{/* /plugin-store-modal */}
+        </div>
       )}
 
       {installNotice && (
@@ -3010,6 +3176,45 @@ function PluginsPanel({ settings, onChange }: PanelProps) {
         >
           {installNotice}
         </div>
+      )}
+
+      {/*
+        ===== プラグイン開発モード (最下部に配置) =====
+        `import.meta.env.DEV` は Vite が `npm run dev` の dev サーバー実行時に
+        true、`npm run build` 済みの本番パッケージでは false に展開する定数。
+        本番ビルドでは静的に false 評価され、このブロック全体がツリーシェイクで
+        削除される（ユーザー設定での暴露も含めて完全に隠れる）。
+      */}
+      {import.meta.env.DEV && (
+        <>
+          <div className="plugins-panel__subhead">
+            <h4 className="plugins-panel__subhead-title">プラグイン開発</h4>
+          </div>
+          <div className="prefs__field">
+            <div className="prefs__field-main">
+              <label className="prefs__field-label">プラグイン開発モード</label>
+              <p className="prefs__field-desc">
+                ON にすると <code>inknel-plugin://</code> プロトコルが
+                <code>userData/plugins/</code> ではなくプロジェクト直下の
+                <code>plugin-dev/plugins/</code> を直接配信します。ダウンロード /
+                インポート不要で、<code>plugin-dev/plugins/&lt;id&gt;/</code>{' '}
+                の中のファイルを編集して Cmd+R すれば即反映されます。
+                開発 (npm run dev) 時のみ有効。production パッケージでは無視されます。
+              </p>
+            </div>
+            <ToggleSwitch
+              checked={settings.pluginDevMode}
+              onChange={(v) => onChange('pluginDevMode', v)}
+              ariaLabel="プラグイン開発モード"
+            />
+          </div>
+          {settings.pluginDevMode && (
+            <p className="prefs__field-desc" style={{ marginTop: 8 }}>
+              ✓ 開発モード ON — ロード先:{' '}
+              <code>&lt;project&gt;/plugin-dev/plugins/&lt;id&gt;/</code>
+            </p>
+          )}
+        </>
       )}
     </div>
   );
@@ -3310,6 +3515,8 @@ function RestorePanel() {
     type: 'ok' | 'err';
     text: string;
   } | null>(null);
+  // リストア完了時に表示する再起動プロンプト (null = 非表示)
+  const [restartPrompt, setRestartPrompt] = useState<string | null>(null);
 
   const handleRestore = async () => {
     if (!window.confirm(t.settings.restore.confirm)) return;
@@ -3349,6 +3556,15 @@ function RestorePanel() {
             .replace('{{imported}}', String(importedCount)) +
           ` (${result.restoredPath})`,
       });
+      // リストアは DB 全置換 + ファイル全置換のため、各種キャッシュ・タブ・
+      // 検索インデックス等を確実に整合させるためにアプリ再起動が必要。
+      setRestartPrompt(
+        `リストアが完了しました。\n\n` +
+          `復元ファイル: ${result.fileCount} 件\n` +
+          `DB へのインポート: ${importedCount} 件\n` +
+          `保存先: ${result.restoredPath}\n\n` +
+          `反映には再起動が必要です。OK を押すとアプリを再起動します。`,
+      );
     } catch (err) {
       setMessage({
         type: 'err',
@@ -3444,6 +3660,38 @@ function RestorePanel() {
           <span>{message.text}</span>
         </div>
       )}
+
+      {restartPrompt !== null && (
+        <div
+          className="storage-panel__restart-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="restore-restart-title"
+        >
+          <div className="storage-panel__restart-modal">
+            <h4
+              id="restore-restart-title"
+              className="storage-panel__restart-title"
+            >
+              再起動が必要です
+            </h4>
+            <p className="storage-panel__restart-message">{restartPrompt}</p>
+            <div className="storage-panel__restart-actions">
+              <button
+                type="button"
+                className="storage-panel__btn"
+                autoFocus
+                onClick={() => {
+                  setRestartPrompt(null);
+                  void window.api.app.relaunch();
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3485,6 +3733,195 @@ function RestoreIcon() {
       <path d="M3 4v5h5" />
       <path d="M12 7v5l3 2" />
     </svg>
+  );
+}
+
+// ============================================================
+// メンテナンスパネル
+// ============================================================
+// リンク切れ (orphan) の画像 / 添付ファイルを検出・削除する。
+// 元は ResetPanel 内にあった機能を独立カテゴリに切り出したもの。
+function MaintenancePanel() {
+  type Orphan = {
+    filename: string;
+    kind: 'images' | 'attachments';
+    size: number;
+  };
+  const [orphans, setOrphans] = useState<Orphan[] | null>(null);
+  const [orphanBusy, setOrphanBusy] = useState(false);
+  const [orphanMessage, setOrphanMessage] = useState<{
+    type: 'ok' | 'err';
+    text: string;
+  } | null>(null);
+
+  const handleScanOrphans = async () => {
+    setOrphanBusy(true);
+    setOrphanMessage(null);
+    try {
+      const list = await window.api.storage.scanOrphans();
+      setOrphans(list);
+      if (list.length === 0) {
+        setOrphanMessage({
+          type: 'ok',
+          text: 'リンク切れのファイルは見つかりませんでした。',
+        });
+      }
+    } catch (err) {
+      setOrphanMessage({
+        type: 'err',
+        text:
+          'スキャンに失敗しました: ' +
+          (err instanceof Error ? err.message : String(err)),
+      });
+    } finally {
+      setOrphanBusy(false);
+    }
+  };
+
+  const handleDeleteOrphans = async () => {
+    if (!orphans || orphans.length === 0) return;
+    if (
+      !window.confirm(
+        `${orphans.length} 件のリンク切れファイルを削除します。\n取り消しできません。よろしいですか?`,
+      )
+    )
+      return;
+    setOrphanBusy(true);
+    setOrphanMessage(null);
+    try {
+      const targets = orphans.map((o) => ({
+        filename: o.filename,
+        kind: o.kind,
+      }));
+      const res = await window.api.storage.deleteOrphans(targets);
+      setOrphanMessage({
+        type: res.failed === 0 ? 'ok' : 'err',
+        text: `${res.deleted} 件削除しました${
+          res.failed > 0 ? ` (${res.failed} 件失敗)` : ''
+        }。`,
+      });
+      const list = await window.api.storage.scanOrphans();
+      setOrphans(list);
+    } catch (err) {
+      setOrphanMessage({
+        type: 'err',
+        text:
+          '削除に失敗しました: ' +
+          (err instanceof Error ? err.message : String(err)),
+      });
+    } finally {
+      setOrphanBusy(false);
+    }
+  };
+
+  const formatSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+  const orphanTotalSize = orphans
+    ? orphans.reduce((acc, o) => acc + o.size, 0)
+    : 0;
+
+  return (
+    <div className="prefs__section">
+      <h3 className="prefs__section-title">メンテナンス</h3>
+
+      <div className="reset-panel__subhead">
+        <h4 className="reset-panel__subhead-title">
+          リンク切れの画像・ファイルを削除
+        </h4>
+      </div>
+      <div className="orphan-panel__card">
+        <p className="orphan-panel__desc">
+          どのノートからも参照されていない画像 / 添付ファイルを検出して削除
+          します。ノート本文を編集中に画像を貼り直したり、ノートを削除した
+          ときに残ったファイルを整理する用途で使ってください。
+        </p>
+        <div className="orphan-panel__actions">
+          <button
+            type="button"
+            className="orphan-panel__btn"
+            onClick={() => void handleScanOrphans()}
+            disabled={orphanBusy}
+          >
+            {orphanBusy && orphans === null ? (
+              <>
+                <Spinner />
+                スキャン中...
+              </>
+            ) : (
+              'リンク切れをスキャン'
+            )}
+          </button>
+          <button
+            type="button"
+            className="orphan-panel__btn orphan-panel__btn--danger"
+            onClick={() => void handleDeleteOrphans()}
+            disabled={
+              orphanBusy || orphans === null || orphans.length === 0
+            }
+          >
+            {orphanBusy && orphans !== null && orphans.length > 0 ? (
+              <>
+                <Spinner />
+                削除中...
+              </>
+            ) : (
+              `削除${
+                orphans && orphans.length > 0 ? ` (${orphans.length})` : ''
+              }`
+            )}
+          </button>
+        </div>
+
+        {orphans !== null && orphans.length > 0 && (
+          <div className="orphan-panel__list-wrap">
+            <div className="orphan-panel__list-summary">
+              {orphans.length} 件 / 合計 {formatSize(orphanTotalSize)}
+            </div>
+            <ul className="orphan-panel__list">
+              {orphans.map((o) => (
+                <li
+                  key={`${o.kind}/${o.filename}`}
+                  className="orphan-panel__list-item"
+                >
+                  <span
+                    className={`orphan-panel__preview orphan-panel__preview--${o.kind}`}
+                  >
+                    {o.kind === 'images' ? (
+                      <img
+                        className="orphan-panel__thumb"
+                        src={`inknel-image://${o.filename}`}
+                        alt=""
+                        loading="lazy"
+                      />
+                    ) : (
+                      <FileGlyphIcon />
+                    )}
+                  </span>
+                  <span className="orphan-panel__filename">{o.filename}</span>
+                  <span className="orphan-panel__size">
+                    {formatSize(o.size)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {orphanMessage && (
+          <div
+            className={`orphan-panel__notice orphan-panel__notice--${
+              orphanMessage.type === 'err' ? 'err' : 'ok'
+            }`}
+          >
+            {orphanMessage.type === 'err' ? <AlertIcon /> : <CheckIcon />}
+            <span>{orphanMessage.text}</span>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -3663,6 +4100,8 @@ function ResetPanel() {
 function AboutPanel() {
   const t = useT();
   const repoUrl = 'https://github.com/akirat28/InkNel_Desktop';
+  const licenseUrl =
+    'https://github.com/akirat28/InkNel_Desktop/blob/main/LICENSE.md';
   return (
     <div className="prefs__section">
       <h3 className="prefs__section-title">{t.settings.about.title}</h3>
@@ -3687,6 +4126,19 @@ function AboutPanel() {
             }}
           >
             {repoUrl}
+          </a>
+
+          {/* ----- ライセンス本文へのリンク (GitHub の LICENSE.md) ----- */}
+          <div className="about-panel__originalLabel">ライセンス</div>
+          <a
+            href="#"
+            className="about-panel__link"
+            onClick={(e) => {
+              e.preventDefault();
+              void window.api.shell.openExternal(licenseUrl);
+            }}
+          >
+            {licenseUrl}
           </a>
         </div>
       </div>
@@ -3764,6 +4216,142 @@ function CrossSmallIcon() {
       strokeLinejoin="round"
     >
       <path d="M3 3l10 10M13 3L3 13" />
+    </svg>
+  );
+}
+
+/** 保存先ヒーローカード用フォルダアイコン (大サイズ) */
+function StorageHeroIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+    </svg>
+  );
+}
+
+/** データベース筒アイコン (3 段の楕円) */
+function DatabaseIcon() {
+  return (
+    <svg
+      width="28"
+      height="28"
+      viewBox="0 0 32 32"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <ellipse cx="16" cy="7" rx="10" ry="3.5" />
+      <path d="M6 7 v8 a10 3.5 0 0 0 20 0 V7" />
+      <path d="M6 15 v8 a10 3.5 0 0 0 20 0 V15" />
+    </svg>
+  );
+}
+
+/** Markdown 記号 (M↓ のロゴ風) */
+function MarkdownIcon() {
+  return (
+    <svg
+      width="28"
+      height="28"
+      viewBox="0 0 32 32"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="7" width="26" height="18" rx="3" />
+      <path d="M8 21 V13 L12 17 L16 13 V21" />
+      <path d="M21 13 V21 M21 21 L24 18 M21 21 L18 18" />
+    </svg>
+  );
+}
+
+/** 双方向矢印 (上下) */
+function SyncArrowIcon() {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M8 4 V16 M8 16 L5 13 M8 16 L11 13" />
+      <path d="M16 20 V8 M16 8 L13 11 M16 8 L19 11" />
+    </svg>
+  );
+}
+
+/** クラウド (フィルなし) */
+function CloudIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M7 18 a4 4 0 0 1 -0.5 -7.95 a5 5 0 0 1 9.9 -0.5 a4.5 4.5 0 0 1 1.1 8.45 H7 z" />
+    </svg>
+  );
+}
+
+/** 4 ポイントスパークル */
+function SparkleIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M12 2 L13.5 9 L20 10.5 L13.5 12 L12 19 L10.5 12 L4 10.5 L10.5 9 Z" />
+      <path d="M19 16 L19.7 18.3 L22 19 L19.7 19.7 L19 22 L18.3 19.7 L16 19 L18.3 18.3 Z" />
+    </svg>
+  );
+}
+
+/** 添付ファイル用の汎用ファイルアイコン (折角つき書類) */
+function FileGlyphIcon() {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 3 h8 L18 7 v13 a1 1 0 0 1 -1 1 H6 a1 1 0 0 1 -1 -1 V4 a1 1 0 0 1 1 -1 z" />
+      <path d="M14 3 v4 h4" />
     </svg>
   );
 }

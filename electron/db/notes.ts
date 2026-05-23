@@ -13,6 +13,8 @@ export interface NoteMeta {
   linkedNoteIds: string[];
   createdAt: number;
   updatedAt: number;
+  /** ゴミ箱に移動された epoch ms (null = 通常ノート) */
+  trashedAt: number | null;
 }
 
 interface NoteRow {
@@ -26,6 +28,7 @@ interface NoteRow {
   body: string;
   created_at: number;
   updated_at: number;
+  trashed_at: number | null;
 }
 
 function parseStringArray(raw: string): string[] {
@@ -51,16 +54,33 @@ function rowToMeta(row: NoteRow): NoteMeta {
     linkedNoteIds: parseStringArray(row.linked_note_ids),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    trashedAt: row.trashed_at,
   };
 }
 
+/** 通常ノート一覧 (ゴミ箱に入っているものは除外) */
 export function listNotes(): NoteMeta[] {
   const db = initDb();
   const rows = db
     .prepare(
-      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at
+      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at, trashed_at
          FROM notes
+        WHERE trashed_at IS NULL
         ORDER BY updated_at DESC`,
+    )
+    .all() as NoteRow[];
+  return rows.map(rowToMeta);
+}
+
+/** ゴミ箱内のノート一覧 (削除日が新しい順) */
+export function listTrashedNotes(): NoteMeta[] {
+  const db = initDb();
+  const rows = db
+    .prepare(
+      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at, trashed_at
+         FROM notes
+        WHERE trashed_at IS NOT NULL
+        ORDER BY trashed_at DESC`,
     )
     .all() as NoteRow[];
   return rows.map(rowToMeta);
@@ -70,7 +90,7 @@ export function getNote(id: string): NoteMeta | null {
   const db = initDb();
   const row = db
     .prepare(
-      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at FROM notes WHERE id = ?`,
+      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at, trashed_at FROM notes WHERE id = ?`,
     )
     .get(id) as NoteRow | undefined;
   return row ? rowToMeta(row) : null;
@@ -200,10 +220,11 @@ export function searchNotes(query: string): NoteMeta[] {
   const db = initDb();
   const rows = db
     .prepare(
-      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at,
+      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at, trashed_at,
               CASE WHEN lower(title) LIKE @like THEN 0 ELSE 1 END AS rank
          FROM notes
-        WHERE lower(title) LIKE @like OR lower(body) LIKE @like
+        WHERE trashed_at IS NULL
+          AND (lower(title) LIKE @like OR lower(body) LIKE @like)
         ORDER BY rank ASC, updated_at DESC`,
     )
     .all({ like }) as (NoteRow & { rank: number })[];
@@ -213,6 +234,63 @@ export function searchNotes(query: string): NoteMeta[] {
 export function deleteNote(id: string): void {
   const db = initDb();
   db.prepare(`DELETE FROM notes WHERE id = ?`).run(id);
+}
+
+/**
+ * ゴミ箱に移動 (trashed_at をセット)。ノート自体は残るので復元可能。
+ * 通常の「削除」フローはこちらを使う。
+ */
+export function trashNote(id: string): NoteMeta | null {
+  const db = initDb();
+  const current = getNote(id);
+  if (!current) return null;
+  const trashedAt = Date.now();
+  db.prepare(`UPDATE notes SET trashed_at = ? WHERE id = ?`).run(
+    trashedAt,
+    id,
+  );
+  return { ...current, trashedAt };
+}
+
+/** ゴミ箱から復元 (trashed_at を NULL に戻す) */
+export function restoreNote(id: string): NoteMeta | null {
+  const db = initDb();
+  const current = getNote(id);
+  if (!current) return null;
+  db.prepare(`UPDATE notes SET trashed_at = NULL WHERE id = ?`).run(id);
+  return { ...current, trashedAt: null };
+}
+
+/** ゴミ箱内のノートをすべて物理削除し、削除した id 配列を返す */
+export function emptyTrash(): string[] {
+  const db = initDb();
+  const rows = db
+    .prepare(`SELECT id FROM notes WHERE trashed_at IS NOT NULL`)
+    .all() as { id: string }[];
+  const ids = rows.map((r) => r.id);
+  db.prepare(`DELETE FROM notes WHERE trashed_at IS NOT NULL`).run();
+  return ids;
+}
+
+/**
+ * 指定日数以上前にゴミ箱に入ったノートを物理削除し、id 配列を返す。
+ * 起動時に呼び出して 30 日経過のものを自動削除する用途。
+ */
+export function purgeOldTrash(daysOld: number): string[] {
+  const cutoff = Date.now() - daysOld * 24 * 60 * 60 * 1000;
+  const db = initDb();
+  const rows = db
+    .prepare(
+      `SELECT id FROM notes WHERE trashed_at IS NOT NULL AND trashed_at < ?`,
+    )
+    .all(cutoff) as { id: string }[];
+  const ids = rows.map((r) => r.id);
+  if (ids.length > 0) {
+    db.prepare(
+      `DELETE FROM notes WHERE trashed_at IS NOT NULL AND trashed_at < ?`,
+    ).run(cutoff);
+  }
+  return ids;
 }
 
 /**
