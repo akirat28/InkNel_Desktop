@@ -134,3 +134,69 @@ export function deleteBody(id: string): void {
   const p = notePath(id);
   if (existsSync(p)) unlinkSync(p);
 }
+
+/**
+ * Tombstone (削除墓標) を書き出す。.md ファイルを物理削除する代わりに、
+ * `deleted: true / deleted_at: N` だけの front-matter ファイルへ置き換える。
+ *
+ * これにより他環境 (iCloud / Dropbox 等で同じフォルダを共有しているデバイス)
+ * は「この id は削除された」と認識でき、DB から自動的に消せる。物理削除
+ * してしまうと相手側は「DB ある / MD 無し = 新規」と誤判定して MD を
+ * 再生成 → 結果としてノートが復活してしまうバグを防ぐ。
+ *
+ * 一定期間 (retention) 経過後に物理削除するのは別のジョブ (purgeOldTombstones)
+ * で行う想定。
+ */
+export function writeTombstone(id: string, deletedAt: number = Date.now()): void {
+  const fm: NoteFrontMatter = {
+    deleted: true,
+    deletedAt,
+    // 同期判定で「deletedAt と DB.updatedAt の大小」を見るときに updatedAt が
+    // 揃っていると比較しやすいので同値で書き出す。
+    updatedAt: deletedAt,
+  };
+  const full = serializeFrontMatter(fm, '');
+  writeFileSync(notePath(id), full, 'utf-8');
+}
+
+/** ファイルから読んだ meta が tombstone かどうかを判定 */
+export function isTombstoneMeta(meta: NoteFrontMatter | undefined | null): boolean {
+  return !!meta && meta.deleted === true;
+}
+
+/**
+ * 保持期間を超えた tombstone (.md ファイルで deleted=true のもの) を物理削除する。
+ * 起動時など適当なタイミングで呼ぶ。retentionMs (ms) 既定: 90 日。
+ * 削除したファイル id 配列を返す。
+ */
+export async function purgeOldTombstones(
+  retentionMs: number = 90 * 24 * 60 * 60 * 1000,
+): Promise<string[]> {
+  const dir = notesDir();
+  const purged: string[] = [];
+  let files: string[] = [];
+  try {
+    files = await fsp.readdir(dir);
+  } catch {
+    return purged;
+  }
+  const cutoff = Date.now() - retentionMs;
+  for (const f of files) {
+    if (!f.endsWith('.md')) continue;
+    const id = f.replace(/\.md$/, '');
+    const p = join(dir, f);
+    try {
+      const raw = await fsp.readFile(p, 'utf-8');
+      const { meta } = parseFrontMatter(raw);
+      if (!isTombstoneMeta(meta)) continue;
+      const ts = typeof meta.deletedAt === 'number' ? meta.deletedAt : 0;
+      if (ts > 0 && ts < cutoff) {
+        await fsp.unlink(p);
+        purged.push(id);
+      }
+    } catch {
+      // 壊れたファイルはスキップ
+    }
+  }
+  return purged;
+}

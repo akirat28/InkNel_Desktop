@@ -95,7 +95,7 @@ describe('cloudSync ライトスルー', () => {
     expect(manifest.notes.n1.title).toBe('タイトル');
   });
 
-  test('removeSingleNote で body と manifest エントリが消える', () => {
+  test('removeSingleNote は MD を tombstone 化し manifest エントリを消す', () => {
     insertNote(makeNote('n2'));
     writeBody('n2', 'x');
     pushSingleNote('icloud', 'n2');
@@ -103,7 +103,11 @@ describe('cloudSync ライトスルー', () => {
     removeSingleNote('icloud', 'n2');
 
     const syncRoot = join(iCloudRoot, 'InkNel');
-    expect(existsSync(join(syncRoot, 'notes', 'n2.md'))).toBe(false);
+    // MD ファイルは「物理削除」ではなく tombstone として残る (他デバイスへ削除を伝播するため)
+    const md = readFileSync(join(syncRoot, 'notes', 'n2.md'), 'utf8');
+    expect(md).toMatch(/deleted:\s*true/);
+    expect(md).toMatch(/deleted_at:\s*\d+/);
+    // manifest からは消える (復活方向の sync 候補にしないため)
     const manifest = JSON.parse(
       readFileSync(join(syncRoot, 'manifest.json'), 'utf8'),
     );

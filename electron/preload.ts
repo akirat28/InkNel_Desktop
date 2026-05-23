@@ -334,11 +334,13 @@ contextBridge.exposeInMainWorld('api', {
         title: string;
         reason: 'missing' | 'newer';
       }>;
+      /** disk が tombstone なので DB から削除すべきノート */
+      dbDeleteTargets: Array<{ id: string; deletedAt: number }>;
     }> {
       return ipcRenderer.invoke('storage:scan');
     },
     /** DB ↔ disk の双方向同期を実行し、件数を返す */
-    sync(): Promise<{ saved: number; imported: number }> {
+    sync(): Promise<{ saved: number; imported: number; deleted: number }> {
       return ipcRenderer.invoke('storage:sync');
     },
     /** DB の全ノートを保存先フォルダに強制上書き */

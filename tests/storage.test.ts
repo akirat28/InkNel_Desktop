@@ -20,8 +20,12 @@ import {
 } from '../electron/storage/attachmentsFiles';
 import {
   readBody,
+  readBodyWithMeta,
   writeBody,
   deleteBody,
+  writeTombstone,
+  isTombstoneMeta,
+  purgeOldTombstones,
 } from '../electron/storage/notesFiles';
 
 beforeEach(() => {
@@ -127,4 +131,41 @@ describe('notesFiles', () => {
     expect(() => deleteBody('note-x')).not.toThrow();
   });
 
+  test('writeTombstone は deleted=true / deleted_at の MD を残す', () => {
+    // 後続の purgeOldTombstones テストに副作用を与えないよう「最近」を使う
+    // (storageRoot キャッシュがテスト間で生き残るため tombstones は累積する)
+    const recent = Date.now() - 1000 * 60; // 1 分前
+    writeTombstone('tomb-1', recent);
+    const { meta, body } = readBodyWithMeta('tomb-1');
+    expect(isTombstoneMeta(meta)).toBe(true);
+    expect(meta.deleted).toBe(true);
+    expect(meta.deletedAt).toBe(recent);
+    expect(meta.updatedAt).toBe(recent);
+    expect(body.trim()).toBe('');
+  });
+
+  test('isTombstoneMeta は通常メタで false', () => {
+    expect(isTombstoneMeta({ title: 'foo' })).toBe(false);
+    expect(isTombstoneMeta({})).toBe(false);
+    expect(isTombstoneMeta(null)).toBe(false);
+    expect(isTombstoneMeta(undefined)).toBe(false);
+  });
+
+  test('purgeOldTombstones は retention を超えた tombstone のみ物理削除', async () => {
+    const old = Date.now() - 1000 * 60 * 60 * 24 * 200; // 200 日前
+    const fresh = Date.now() - 1000 * 60 * 60; // 1 時間前
+    writeTombstone('tomb-old', old);
+    writeTombstone('tomb-fresh', fresh);
+    writeBody('regular', '# 普通のノート');
+
+    const purged = await purgeOldTombstones(); // 既定 90 日
+    expect(purged).toEqual(['tomb-old']);
+
+    // 古い tombstone は物理削除されたので readBody は空
+    expect(readBody('tomb-old')).toBe('');
+    // 新しい tombstone は残る
+    expect(isTombstoneMeta(readBodyWithMeta('tomb-fresh').meta)).toBe(true);
+    // 通常ノートには手を出さない
+    expect(readBody('regular')).toBe('# 普通のノート');
+  });
 });

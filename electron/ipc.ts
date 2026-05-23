@@ -58,6 +58,9 @@ import {
   writeBody,
   writeNoteFile,
   deleteBody,
+  writeTombstone,
+  isTombstoneMeta,
+  purgeOldTombstones,
 } from './storage/notesFiles';
 import {
   saveImage,
@@ -986,19 +989,26 @@ function getActiveShareProvider(): ShareProvider {
 }
 
 /** 最後に同期した日時を保存する設定キー */
-const STORAGE_LAST_SYNC_KEY = 'storage.lastSync';
+export const STORAGE_LAST_SYNC_KEY = 'storage.lastSync';
 
 /** 取り込み対象として認める UUID 風ファイル名 */
 const NOTE_FILENAME_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-interface SyncTarget {
+export interface SyncTarget {
   id: string;
   title: string;
   reason: 'missing' | 'newer';
 }
 
-interface SyncPlan {
+/** disk 側の tombstone (deleted) を受けて DB 側からも削除すべきノート */
+export interface SyncDeleteTarget {
+  id: string;
+  /** disk 上の deletedAt (ms epoch) */
+  deletedAt: number;
+}
+
+export interface SyncPlan {
   storageRoot: string;
   dbNoteCount: number;
   diskFileCount: number;
@@ -1007,6 +1017,8 @@ interface SyncPlan {
   dbToDiskTargets: SyncTarget[];
   /** disk → DB へ反映すべきノート */
   diskToDbTargets: SyncTarget[];
+  /** disk が tombstone なので DB から削除すべきノート */
+  dbDeleteTargets: SyncDeleteTarget[];
 }
 
 /**
@@ -1021,7 +1033,7 @@ interface SyncPlan {
  * - **front-matter のみ read**: 変更ありと判明したファイルでも、本文ではなく
  *   先頭 8KB だけ async で読んでメタ情報を取り出す
  */
-async function buildSyncPlan(): Promise<SyncPlan> {
+export async function buildSyncPlan(): Promise<SyncPlan> {
   const root = getStorageRoot();
   const notesDir = join(root, 'notes');
   const lastSyncRaw = getAllSettings()[STORAGE_LAST_SYNC_KEY];
@@ -1045,13 +1057,20 @@ async function buildSyncPlan(): Promise<SyncPlan> {
     id: string;
     title: string;
     updatedAt: number;
+    /** Tombstone (deleted: true) の場合の deletedAt */
+    deletedAt?: number;
   };
   const diskById = new Map<string, DiskInfo>();
 
   // ----- Stage 1: 全ファイルを async stat（メタデータのみ、クラウドでも高速） -----
   // Google Drive 等は readFile が遅いが stat は速い
   const STAT_CONCURRENCY = 16;
-  const fileInfos: Array<{ id: string; file: string; mtime: number }> = [];
+  const fileInfos: Array<{
+    id: string;
+    file: string;
+    mtime: number;
+    size: number;
+  }> = [];
   for (let i = 0; i < diskFiles.length; i += STAT_CONCURRENCY) {
     const batch = diskFiles.slice(i, i + STAT_CONCURRENCY);
     const results = await Promise.all(
@@ -1060,7 +1079,12 @@ async function buildSyncPlan(): Promise<SyncPlan> {
         if (!NOTE_FILENAME_RE.test(id)) return null;
         try {
           const s = await fsp.stat(join(notesDir, file));
-          return { id, file, mtime: Math.floor(s.mtimeMs) };
+          return {
+            id,
+            file,
+            mtime: Math.floor(s.mtimeMs),
+            size: s.size,
+          };
         } catch {
           return null;
         }
@@ -1071,14 +1095,32 @@ async function buildSyncPlan(): Promise<SyncPlan> {
 
   // ----- Stage 2: 必要なファイルだけ front-matter を読む -----
   // 「不要 = mtime ≤ lastSync かつ DB 側も lastSync 以前」のものは body 読まない
-  const toReadFM: Array<{ id: string; file: string; mtime: number }> = [];
+  const toReadFM: Array<{
+    id: string;
+    file: string;
+    mtime: number;
+    size: number;
+  }> = [];
+  // Tombstone (削除墓標) は本文を持たないので極めて小さい (front-matter のみで
+  // 約 50〜150 byte 程度)。他デバイスでの削除がクラウド経由で同期されて来た
+  // とき、ファイルの mtime が「元デバイスの削除時刻 (= こちらの lastSync より
+  // 古い)」のまま入って来るケースがあり、純粋に mtime > lastSync で高速パス
+  // を抜けると tombstone を取りこぼす。サイズの小ささを補助判定として使い、
+  // 小さいファイルは必ず front-matter を読みに行く。
+  const TOMBSTONE_MAX_BYTES = 256;
   for (const info of fileInfos) {
     const db = dbById.get(info.id);
     const fileMaybeChanged = info.mtime > lastSync;
     const dbMaybeChanged = db && db.updatedAt > lastSync;
     const isNew = !db;
+    const tombstoneSuspect = info.size <= TOMBSTONE_MAX_BYTES;
 
-    if (!fileMaybeChanged && !dbMaybeChanged && !isNew) {
+    if (
+      !fileMaybeChanged &&
+      !dbMaybeChanged &&
+      !isNew &&
+      !tombstoneSuspect
+    ) {
       // 完全に同期済みのはず。本文・front-matter を読まずに、disk 側の info は
       // DB の title を流用して登録（DB→disk 方向の判定にも使われないため安全）。
       diskById.set(info.id, {
@@ -1089,7 +1131,7 @@ async function buildSyncPlan(): Promise<SyncPlan> {
       continue;
     }
 
-    if (!fileMaybeChanged && db) {
+    if (!fileMaybeChanged && db && !tombstoneSuspect) {
       // disk 未変更だが DB が新しい → DB→disk 方向。disk の title は使われない
       diskById.set(info.id, {
         id: info.id,
@@ -1111,15 +1153,24 @@ async function buildSyncPlan(): Promise<SyncPlan> {
       batch.map(async (info) => {
         try {
           const { meta } = await readFrontMatterOnly(info.id);
+          const isTomb = isTombstoneMeta(meta);
+          const tsUpdated = isTomb
+            ? typeof meta.deletedAt === 'number' && meta.deletedAt > 0
+              ? meta.deletedAt
+              : 0
+            : 0;
           const metaUpdated =
             typeof meta.updatedAt === 'number' && meta.updatedAt > 0
               ? meta.updatedAt
               : 0;
-          const updatedAt = Math.max(metaUpdated, info.mtime);
+          const updatedAt = Math.max(metaUpdated, tsUpdated, info.mtime);
           diskById.set(info.id, {
             id: info.id,
-            title: meta.title ?? '取り込みノート',
+            title: meta.title ?? (isTomb ? '(deleted)' : '取り込みノート'),
             updatedAt,
+            ...(isTomb && tsUpdated > 0
+              ? { deletedAt: tsUpdated }
+              : {}),
           });
         } catch {
           // 壊れたファイルはスキップ
@@ -1131,10 +1182,32 @@ async function buildSyncPlan(): Promise<SyncPlan> {
   const allIds = new Set<string>([...dbById.keys(), ...diskById.keys()]);
   const dbToDiskTargets: SyncTarget[] = [];
   const diskToDbTargets: SyncTarget[] = [];
+  const dbDeleteTargets: SyncDeleteTarget[] = [];
 
   for (const id of allIds) {
     const db = dbById.get(id);
     const disk = diskById.get(id);
+
+    // ----- disk 側が tombstone のケース -----
+    // (他デバイスで削除された痕跡)
+    if (disk?.deletedAt != null) {
+      if (!db) {
+        // DB に無ければ tombstone も無視 (既に削除済み)
+        continue;
+      }
+      if (disk.deletedAt >= db.updatedAt) {
+        // disk の削除時刻が DB の更新時刻以降 → 削除を受け入れる
+        dbDeleteTargets.push({ id, deletedAt: disk.deletedAt });
+      } else {
+        // DB の方が新しい (削除後に編集が走った) → DB を勝たせて MD 再生成
+        dbToDiskTargets.push({
+          id,
+          title: db.title || '無題',
+          reason: 'newer',
+        });
+      }
+      continue;
+    }
 
     if (db && !disk) {
       // ディスクに無ければ書き出し
@@ -1181,6 +1254,7 @@ async function buildSyncPlan(): Promise<SyncPlan> {
     lastSync,
     dbToDiskTargets,
     diskToDbTargets,
+    dbDeleteTargets,
   };
 }
 
@@ -1397,8 +1471,10 @@ export function registerIpc(): void {
       throw new Error('保護されているノートは削除できません');
     }
     trashNote(id);
-    // ゴミ箱送りなので保存先 .md とクラウドコピーは消す (DB body は残す)
-    deleteBody(id);
+    // ゴミ箱送りでも MD ファイルは tombstone (deleted: true の front-matter のみ
+    // のファイル) に書き換える。物理削除すると他デバイスで「DB ある / MD 無し =
+    // 新規」と誤判定されてノートが復活してしまうため。DB body は restore 用に残す。
+    writeTombstone(id);
     const p = getActiveShareProvider();
     if (p !== 'none') removeSingleNote(p, id);
   });
@@ -1431,13 +1507,12 @@ export function registerIpc(): void {
   /** ゴミ箱を空にする (物理削除)。削除した id 配列を返す */
   ipcMain.handle('notes:empty-trash', (): string[] => {
     const ids = emptyTrash();
-    // ファイルとクラウドはすでに trash 移動時に削除済み。
-    // 念のため deleteBody は呼んでおく (再復元前に手動で .md を作った場合等のケア)
+    // tombstone を確実に書き出して、他デバイスへ削除を伝播させる
     for (const id of ids) {
       try {
-        deleteBody(id);
+        writeTombstone(id);
       } catch {
-        /* 既に無くても OK */
+        /* 失敗時もループは継続 */
       }
     }
     return ids;
@@ -1453,9 +1528,9 @@ export function registerIpc(): void {
       const ids = purgeOldTrash(typeof daysOld === 'number' ? daysOld : 30);
       for (const id of ids) {
         try {
-          deleteBody(id);
+          writeTombstone(id);
         } catch {
-          /* 既に無くても OK */
+          /* 失敗時もループは継続 */
         }
       }
       return ids;
@@ -1472,9 +1547,11 @@ export function registerIpc(): void {
     }
     deleteNote(id);
     try {
-      deleteBody(id);
+      // 物理ファイルは消さず tombstone を残す。他デバイスへ削除を伝播させ、
+      // かつ既存の trash 由来 tombstone を最新の deletedAt で上書きしておく。
+      writeTombstone(id);
     } catch {
-      /* 既に無くても OK */
+      /* 失敗時もループは継続 */
     }
   });
 
@@ -1924,6 +2001,7 @@ export function registerIpc(): void {
         title: string;
         reason: 'missing' | 'newer';
       }>;
+      dbDeleteTargets: Array<{ id: string; deletedAt: number }>;
     }> => {
       const plan = await buildSyncPlan();
       return {
@@ -1933,6 +2011,7 @@ export function registerIpc(): void {
         lastSync: plan.lastSync,
         dbToDiskTargets: plan.dbToDiskTargets,
         diskToDbTargets: plan.diskToDbTargets,
+        dbDeleteTargets: plan.dbDeleteTargets,
       };
     },
   );
@@ -1982,11 +2061,12 @@ export function registerIpc(): void {
    */
   ipcMain.handle(
     'storage:sync',
-    async (): Promise<{ saved: number; imported: number }> => {
+    async (): Promise<{ saved: number; imported: number; deleted: number }> => {
       const plan = await buildSyncPlan();
       const notesDir = join(plan.storageRoot, 'notes');
       let saved = 0;
       let imported = 0;
+      let deleted = 0;
 
       // DB → disk
       for (const target of plan.dbToDiskTargets) {
@@ -2061,10 +2141,26 @@ export function registerIpc(): void {
         }
       }
 
+      // disk tombstone → DB から削除
+      // (他環境で削除されたノートを、こちらの DB からも消す)
+      for (const target of plan.dbDeleteTargets) {
+        try {
+          deleteNote(target.id);
+          // tombstone ファイル自体は残しておく (purgeOldTombstones が retention 後に物理削除)
+          deleted++;
+        } catch (err) {
+          console.warn(
+            '[storage:sync] delete failed for',
+            target.id,
+            err,
+          );
+        }
+      }
+
       // 同期完了時刻を保存
       setSetting(STORAGE_LAST_SYNC_KEY, String(Date.now()));
 
-      return { saved, imported };
+      return { saved, imported, deleted };
     },
   );
 

@@ -148,4 +148,19 @@ describe('ラウンドトリップ', () => {
     expect(meta).toEqual({});
     expect(body).toBe(raw);
   });
+
+  test('tombstone (deleted / deleted_at) のラウンドトリップ', () => {
+    const meta: NoteFrontMatter = {
+      deleted: true,
+      deletedAt: 1712900000000,
+      updatedAt: 1712900000000,
+    };
+    const serialized = serializeFrontMatter(meta, '');
+    expect(serialized).toMatch(/deleted:\s*true/);
+    expect(serialized).toMatch(/deleted_at:\s*1712900000000/);
+    const { meta: back } = parseFrontMatter(serialized);
+    expect(back.deleted).toBe(true);
+    expect(back.deletedAt).toBe(1712900000000);
+    expect(back.updatedAt).toBe(1712900000000);
+  });
 });

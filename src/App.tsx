@@ -1136,7 +1136,9 @@ export default function App() {
         try {
           const scan = await window.api.storage.scan();
           const diffCount =
-            scan.dbToDiskTargets.length + scan.diskToDbTargets.length;
+            scan.dbToDiskTargets.length +
+            scan.diskToDbTargets.length +
+            scan.dbDeleteTargets.length;
           if (diffCount > 0) {
             await window.api.storage.sync();
             // 取り込みでノートが増えた / メタが変わった可能性があるので

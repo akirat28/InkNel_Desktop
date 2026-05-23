@@ -165,9 +165,11 @@ export interface StorageApi {
       title: string;
       reason: 'missing' | 'newer';
     }>;
+    /** disk が tombstone なので DB から削除すべきノート */
+    dbDeleteTargets: Array<{ id: string; deletedAt: number }>;
   }>;
-  /** DB ↔ disk の同期を実行し、書き出し / 取り込みの件数を返す */
-  sync(): Promise<{ saved: number; imported: number }>;
+  /** DB ↔ disk の同期を実行し、書き出し / 取り込み / 削除の件数を返す */
+  sync(): Promise<{ saved: number; imported: number; deleted: number }>;
   /** DB の全ノートを保存先フォルダに強制上書きする */
   overwriteAll(): Promise<{ written: number; failed: number }>;
   /**

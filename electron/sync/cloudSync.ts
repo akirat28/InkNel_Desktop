@@ -20,7 +20,6 @@ import {
   readdirSync,
   readFileSync,
   statSync,
-  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -33,6 +32,7 @@ import {
   type NoteMeta,
 } from '../db/notes';
 import { readBody, writeBody } from '../storage/notesFiles';
+import { serializeFrontMatter, type NoteFrontMatter } from '../utils/frontMatter';
 import {
   imagesDir,
   IMAGE_FILENAME_PATTERN,
@@ -595,7 +595,16 @@ export function pushSingleNote(provider: ShareProvider, noteId: string): void {
 }
 
 /**
- * 削除されたノートをクラウドフォルダから除去する。
+ * 削除されたノートをクラウドフォルダから「除去」する。
+ *
+ * 単に `unlinkSync` してしまうと他デバイスでは「DB ある / MD 無し = 新規」と
+ * 判定されてしまい、削除したはずのノートが復活する。そこで **tombstone
+ * (削除墓標)** ファイルへ置き換える: front-matter に `deleted: true /
+ * deleted_at: N` だけを書いた .md を残し、他デバイス側の sync で
+ * 「id 同名の DB エントリを消す」を駆動する。
+ *
+ * manifest からはエントリを除いて、復活方向の sync 候補にも上がらないように
+ * する。
  */
 export function removeSingleNote(
   provider: ShareProvider,
@@ -605,12 +614,16 @@ export function removeSingleNote(
   if (!root) return;
 
   const notePath = join(root, 'notes', `${noteId}.md`);
-  if (existsSync(notePath)) {
-    try {
-      unlinkSync(notePath);
-    } catch {
-      // 削除失敗は無視
-    }
+  const deletedAt = Date.now();
+  try {
+    const fm: NoteFrontMatter = {
+      deleted: true,
+      deletedAt,
+      updatedAt: deletedAt,
+    };
+    writeFileSync(notePath, serializeFrontMatter(fm, ''), 'utf8');
+  } catch {
+    // 書き込み失敗は無視（次回 sync で再試行される）
   }
 
   const manifestPath = join(root, 'manifest.json');

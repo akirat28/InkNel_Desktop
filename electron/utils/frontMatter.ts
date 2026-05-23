@@ -34,6 +34,15 @@ export interface NoteFrontMatter {
   linkedNoteIds?: string[];
   createdAt?: number;
   updatedAt?: number;
+  /**
+   * Tombstone (削除墓標) フラグ。true なら本ファイルは「削除済みノート」を
+   * 表すスタブで、本文は空。クロスデバイス同期で「他環境で削除された」を
+   * 伝播するために使う (物理的に .md を unlink すると相手環境が「DB ある /
+   * MD 無し = 新規」と誤判定して再生成 → 復活してしまうため)。
+   */
+  deleted?: boolean;
+  /** Tombstone がいつ作られたか (ms epoch) */
+  deletedAt?: number;
 }
 
 // 閉じ `---` の後の改行と、続く空行（区切りの慣例）を 1 行ぶんまで吸収する。
@@ -98,6 +107,10 @@ export function serializeFrontMatter(
     lines.push(`created_at: ${meta.createdAt}`);
   if (meta.updatedAt !== undefined)
     lines.push(`updated_at: ${meta.updatedAt}`);
+  if (meta.deleted !== undefined)
+    lines.push(`deleted: ${meta.deleted ? 'true' : 'false'}`);
+  if (meta.deletedAt !== undefined)
+    lines.push(`deleted_at: ${meta.deletedAt}`);
   lines.push('---');
   // 本文との間に必ず 1 空行を入れる（先頭が空行で始まっていれば追加しない）
   const sep = body.startsWith('\n') ? '' : '\n';
@@ -199,6 +212,15 @@ function parseMiniYaml(yaml: string): NoteFrontMatter {
       case 'updatedAt': {
         const n = parseInt(value, 10);
         if (Number.isFinite(n)) meta.updatedAt = n;
+        break;
+      }
+      case 'deleted':
+        meta.deleted = value === 'true';
+        break;
+      case 'deleted_at':
+      case 'deletedAt': {
+        const n = parseInt(value, 10);
+        if (Number.isFinite(n)) meta.deletedAt = n;
         break;
       }
       default:

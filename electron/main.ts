@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path';
 import { initDb, closeDb } from './db/index';
 import { getAllSettings, setSetting } from './db/settings';
 import { purgeOldTrash } from './db/notes';
+import { purgeOldTombstones } from './storage/notesFiles';
 import { registerIpc } from './ipc';
 import {
   registerInknelImagePrivileged,
@@ -666,6 +667,17 @@ app.whenReady().then(() => {
   } catch (err) {
     console.warn('[trash] startup purge failed:', err);
   }
+  // 保存先 notes/ 配下の tombstone (削除墓標) を 90 日経過後に物理削除する。
+  // 削除直後の MD は他デバイスへの削除伝播のため残すが、無期限には残さない。
+  purgeOldTombstones()
+    .then((ids) => {
+      if (ids.length > 0) {
+        console.log(`[tombstone] purged ${ids.length} old tombstone(s)`);
+      }
+    })
+    .catch((err) => {
+      console.warn('[tombstone] startup purge failed:', err);
+    });
   handleInknelImageProtocol();
   handleInknelPluginProtocol();
   registerIpc();

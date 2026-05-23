@@ -30,7 +30,7 @@ describe('parseSettings', () => {
     expect(parsed.showInsertButtons).toBe(false);
     expect(parsed.protectionPassword).toBe('9999');
     expect(parsed.searchHistoryLimit).toBe(1000);
-    expect(parsed.sidebarWidth).toBe(300);
+    expect(parsed.sidebarWidth).toBe(320);
     expect(parsed.shareProvider).toBe('icloud');
     expect(parsed.templateFolder).toBe('my-template');
   });
@@ -51,7 +51,7 @@ describe('parseSettings', () => {
   });
 
   test('sidebarWidth は min/max にクランプされる', () => {
-    expect(parseSettings({ 'ui.sidebarWidth': '10' }).sidebarWidth).toBe(160);
+    expect(parseSettings({ 'ui.sidebarWidth': '10' }).sidebarWidth).toBe(320);
     expect(parseSettings({ 'ui.sidebarWidth': '9999' }).sidebarWidth).toBe(480);
   });
 });
