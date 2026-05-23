@@ -6,6 +6,7 @@ import {
   DEFAULT_SETTINGS,
   FONT_FAMILY_OPTIONS,
   FONT_SIZE_OPTIONS,
+  SIDEBAR_ITEM_VISIBILITY_OPTIONS,
   isValidProtectionPassword,
   type AiProvider,
   type AiProviderSettings,
@@ -17,6 +18,7 @@ import {
   type OpenHistoryLimit,
   type SearchHistoryLimit,
   type SearchHistoryMode,
+  type SidebarItemVisibility,
   type Theme,
 } from '../settings';
 import { SUPPORTED_HIGHLIGHT_LANGS } from '../utils/highlight';
@@ -1190,8 +1192,118 @@ function GeneralPanel({ settings, onChange }: PanelProps) {
           <option value="1000">1000 {t.settings.general.historyLimitItem}</option>
         </select>
       </div>
+
+      {/* ----- サイドバー行内アイテムの表示設定 ----- */}
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label
+            className="prefs__field-label"
+            htmlFor="prefs-note-kebab-visibility"
+          >
+            ノートのケバブボタン
+          </label>
+          <p className="prefs__field-desc">
+            ノート行の右端に表示するケバブ (3 点) ボタンの表示方式。
+            非表示でも右クリックでメニューを開けます。
+          </p>
+        </div>
+        <select
+          id="prefs-note-kebab-visibility"
+          className="prefs__select"
+          value={settings.noteKebabVisibility}
+          onChange={(e) =>
+            onChange(
+              'noteKebabVisibility',
+              e.target.value as SidebarItemVisibility,
+            )
+          }
+        >
+          {SIDEBAR_ITEM_VISIBILITY_OPTIONS.map((v) => (
+            <option key={v} value={v}>
+              {sidebarVisibilityLabel(v)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label
+            className="prefs__field-label"
+            htmlFor="prefs-folder-kebab-visibility"
+          >
+            フォルダのケバブボタン
+          </label>
+          <p className="prefs__field-desc">
+            フォルダ行の右端に表示するケバブ (3 点) ボタンの表示方式。
+            非表示でも右クリックでメニューを開けます。
+          </p>
+        </div>
+        <select
+          id="prefs-folder-kebab-visibility"
+          className="prefs__select"
+          value={settings.folderKebabVisibility}
+          onChange={(e) =>
+            onChange(
+              'folderKebabVisibility',
+              e.target.value as SidebarItemVisibility,
+            )
+          }
+        >
+          {SIDEBAR_ITEM_VISIBILITY_OPTIONS.map((v) => (
+            <option key={v} value={v}>
+              {sidebarVisibilityLabel(v)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label
+            className="prefs__field-label"
+            htmlFor="prefs-folder-count-visibility"
+          >
+            フォルダのノート数バッジ
+          </label>
+          <p className="prefs__field-desc">
+            フォルダ行の右端に表示する「中に含まれるノート数」バッジの
+            表示方式。ケバブボタンと両方表示する場合はバッジを左、
+            ケバブを右に配置します。
+          </p>
+        </div>
+        <select
+          id="prefs-folder-count-visibility"
+          className="prefs__select"
+          value={settings.folderCountVisibility}
+          onChange={(e) =>
+            onChange(
+              'folderCountVisibility',
+              e.target.value as SidebarItemVisibility,
+            )
+          }
+        >
+          {SIDEBAR_ITEM_VISIBILITY_OPTIONS.map((v) => (
+            <option key={v} value={v}>
+              {sidebarVisibilityLabel(v)}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
+}
+
+/** SidebarItemVisibility を日本語ラベルに変換 */
+function sidebarVisibilityLabel(v: SidebarItemVisibility): string {
+  switch (v) {
+    case 'always':
+      return '常に表示';
+    case 'hover':
+      return 'マウスを乗せたとき';
+    case 'hidden':
+      return '表示しない (右クリックで対応)';
+  }
 }
 
 // ----- コードブロックパネル -----

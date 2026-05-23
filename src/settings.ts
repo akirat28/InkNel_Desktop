@@ -124,6 +124,19 @@ export const FONT_FAMILY_OPTIONS: FontFamilyOption[] = [
 
 /** ノート本文のフォントサイズ (px) */
 export type FontSize = 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
+
+/**
+ * サイドバー行内アイテム (ケバブボタンやファイル数バッジ) の表示方式。
+ * - 'always': 常に表示
+ * - 'hidden': 非表示 (右クリックメニューで操作)
+ * - 'hover':  マウスを乗せたときだけ表示
+ */
+export type SidebarItemVisibility = 'always' | 'hidden' | 'hover';
+export const SIDEBAR_ITEM_VISIBILITY_OPTIONS: SidebarItemVisibility[] = [
+  'always',
+  'hover',
+  'hidden',
+];
 export const FONT_SIZE_OPTIONS: FontSize[] = [12, 13, 14, 15, 16, 17, 18, 19, 20];
 
 /**
@@ -226,6 +239,12 @@ export interface AppSettings {
   historyEnabled: boolean;
   /** カレンダー機能を有効化するか。ON のときアクティビティバーに「カレンダー」ボタンを表示 */
   calendarEnabled: boolean;
+  /** ノート行のケバブボタンの表示 */
+  noteKebabVisibility: SidebarItemVisibility;
+  /** フォルダ行のケバブボタンの表示 */
+  folderKebabVisibility: SidebarItemVisibility;
+  /** フォルダ行のファイル数バッジの表示 */
+  folderCountVisibility: SidebarItemVisibility;
   /** ノート開封履歴の最大件数 */
   historyLimit: OpenHistoryLimit;
   /** サイドバーの幅 (px) */
@@ -318,6 +337,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   searchHistoryLimit: 100,
   historyEnabled: false,
   calendarEnabled: true,
+  noteKebabVisibility: 'hover',
+  folderKebabVisibility: 'hover',
+  folderCountVisibility: 'always',
   historyLimit: 100,
   sidebarWidth: SIDEBAR_WIDTH_DEFAULT,
   codeCopyAlwaysVisible: false,
@@ -395,6 +417,18 @@ export function parseSettings(raw: Record<string, string>): AppSettings {
     calendarEnabled: parseBool(
       raw['calendar.enabled'],
       DEFAULT_SETTINGS.calendarEnabled,
+    ),
+    noteKebabVisibility: parseSidebarVisibility(
+      raw['sidebar.noteKebabVisibility'],
+      DEFAULT_SETTINGS.noteKebabVisibility,
+    ),
+    folderKebabVisibility: parseSidebarVisibility(
+      raw['sidebar.folderKebabVisibility'],
+      DEFAULT_SETTINGS.folderKebabVisibility,
+    ),
+    folderCountVisibility: parseSidebarVisibility(
+      raw['sidebar.folderCountVisibility'],
+      DEFAULT_SETTINGS.folderCountVisibility,
     ),
     historyLimit: parseOpenHistoryLimit(
       raw['history.limit'],
@@ -513,6 +547,12 @@ export function settingToRecord<K extends keyof AppSettings>(
       return { key: 'history.enabled', value: String(value) };
     case 'calendarEnabled':
       return { key: 'calendar.enabled', value: String(value) };
+    case 'noteKebabVisibility':
+      return { key: 'sidebar.noteKebabVisibility', value: String(value) };
+    case 'folderKebabVisibility':
+      return { key: 'sidebar.folderKebabVisibility', value: String(value) };
+    case 'folderCountVisibility':
+      return { key: 'sidebar.folderCountVisibility', value: String(value) };
     case 'historyLimit':
       return { key: 'history.limit', value: String(value) };
     case 'sidebarWidth':
@@ -569,6 +609,14 @@ export function isValidProtectionPassword(v: string): boolean {
 function parseBool(v: string | undefined, fallback: boolean): boolean {
   if (v === 'true') return true;
   if (v === 'false') return false;
+  return fallback;
+}
+
+function parseSidebarVisibility(
+  v: string | undefined,
+  fallback: SidebarItemVisibility,
+): SidebarItemVisibility {
+  if (v === 'always' || v === 'hidden' || v === 'hover') return v;
   return fallback;
 }
 

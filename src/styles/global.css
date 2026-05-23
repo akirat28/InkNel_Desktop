@@ -1009,11 +1009,20 @@ body,
   flex-shrink: 0;
 }
 
+/* input と ✕ クリアボタンを重ねるためのラッパー (相対配置のアンカー) */
+.sidebar__inline-search-inputwrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
 .sidebar__inline-search-input {
   flex: 1;
   min-width: 0;
   height: 26px;
-  padding: 0 8px;
+  /* 右端は ✕ ボタンと重ねるので余白を確保 */
+  padding: 0 26px 0 8px;
   background: var(--bg);
   color: var(--fg);
   border: 1px solid var(--border);
@@ -1025,6 +1034,33 @@ body,
 
 .sidebar__inline-search-input:focus {
   border-color: var(--accent, #818cf8);
+}
+
+/* 入力欄右端に重ねる ✕ クリアボタン。値が空でない時のみ表示。 */
+.sidebar__inline-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--fg-muted, #888);
+  border-radius: 50%;
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.sidebar__inline-search-clear:hover {
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+  color: var(--fg);
 }
 
 .sidebar__inline-search-btn {
@@ -1857,6 +1893,70 @@ body,
   opacity: 1;
 }
 
+/* ========================================
+   フォルダ内のノート数バッジ
+   ======================================== */
+.tree__folder-count {
+  position: absolute;
+  top: 50%;
+  /* 既定はケバブ (right: 4px, 22px幅) の左隣。
+     ケバブ非表示時は data-folder-kebab='hidden' で right を 4px に上書き。 */
+  right: 30px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  background: color-mix(in srgb, var(--accent, #6366f1) 22%, transparent);
+  color: var(--fg);
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  opacity: 0;
+}
+/* ----- ノート数バッジの表示状態 ----- */
+.sidebar__list[data-folder-count='always'] .tree__folder-count {
+  opacity: 1;
+}
+.sidebar__list[data-folder-count='hover']
+  .tree__row-wrap:hover
+  .tree__folder-count {
+  opacity: 1;
+}
+.sidebar__list[data-folder-count='hidden'] .tree__folder-count {
+  display: none;
+}
+/* ケバブが非表示ならカウントを右端 4px に詰める */
+.sidebar__list[data-folder-kebab='hidden'] .tree__folder-count {
+  right: 4px;
+}
+
+/* ----- フォルダ右端の余白調整 (カウント / ケバブの有無に応じて) ----- */
+/* デフォルト: カウント (~26px) + ケバブ (~26px) = 56px */
+.tree__row-wrap:has(.tree__folder-count) .tree__folder {
+  padding-right: 56px;
+}
+/* カウント非表示・ケバブのみ */
+.sidebar__list[data-folder-count='hidden'] .tree__row-wrap .tree__folder {
+  padding-right: 32px;
+}
+/* ケバブ非表示・カウントのみ */
+.sidebar__list[data-folder-kebab='hidden']:not([data-folder-count='hidden'])
+  .tree__row-wrap
+  .tree__folder {
+  padding-right: 32px;
+}
+/* 両方非表示 */
+.sidebar__list[data-folder-kebab='hidden'][data-folder-count='hidden']
+  .tree__row-wrap
+  .tree__folder {
+  padding-right: 8px;
+}
+
 /* 保護中ファイルは lock + kebab の両方を配置するため余白を拡張 */
 .tree__file-li.is-protected .tree__file {
   padding-right: 46px;
@@ -1882,9 +1982,42 @@ body,
   transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 
-.tree__file-li:hover .tree__menu-btn,
+/* キーボードフォーカスは設定に関わらず可視化 (アクセシビリティ) */
 .tree__menu-btn:focus-visible {
   opacity: 1;
+}
+
+/* ============================================================
+   サイドバー: 行内アイテムの表示設定 (常に / 非表示 / ホバー時)
+   ============================================================
+   .sidebar__list に付与した data-* 属性で 3 種類のアイテムを制御:
+     data-note-kebab     = ノート行のケバブボタン
+     data-folder-kebab   = フォルダ行のケバブボタン
+     data-folder-count   = フォルダ行のノート数バッジ
+   いずれも値は 'always' | 'hidden' | 'hover'。 */
+
+/* ----- ノート行のケバブ (.tree__file-li 配下) ----- */
+.sidebar__list[data-note-kebab='always'] .tree__file-li .tree__menu-btn {
+  opacity: 1;
+}
+.sidebar__list[data-note-kebab='hover'] .tree__file-li:hover .tree__menu-btn {
+  opacity: 1;
+}
+.sidebar__list[data-note-kebab='hidden'] .tree__file-li .tree__menu-btn {
+  display: none;
+}
+
+/* ----- フォルダ行のケバブ (.tree__row-wrap 直下のもの) ----- */
+.sidebar__list[data-folder-kebab='always'] .tree__row-wrap > .tree__menu-btn {
+  opacity: 1;
+}
+.sidebar__list[data-folder-kebab='hover']
+  .tree__row-wrap:hover
+  > .tree__menu-btn {
+  opacity: 1;
+}
+.sidebar__list[data-folder-kebab='hidden'] .tree__row-wrap > .tree__menu-btn {
+  display: none;
 }
 
 .tree__menu-btn:hover {

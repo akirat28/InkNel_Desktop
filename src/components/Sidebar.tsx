@@ -813,26 +813,41 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
         {/* インライン検索バー: ヘッダーとリストの間に挿入 */}
         {mode === 'files' && inlineSearchOpen && (
           <div className="sidebar__inline-search">
-            <input
-              type="text"
-              className="sidebar__inline-search-input"
-              value={inlineSearchQuery}
-              placeholder="ノート名を入力..."
-              autoFocus
-              onChange={(e) => setInlineSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                // Enter / Shift+Enter で次/前へ
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  if (e.shiftKey) goPrevHit();
-                  else goNextHit();
-                } else if (e.key === 'Escape') {
-                  e.preventDefault();
-                  setInlineSearchOpen(false);
-                  setInlineSearchQuery('');
-                }
-              }}
-            />
+            <div className="sidebar__inline-search-inputwrap">
+              <input
+                type="text"
+                className="sidebar__inline-search-input"
+                value={inlineSearchQuery}
+                placeholder="ノート名を入力..."
+                autoFocus
+                onChange={(e) => setInlineSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter / Shift+Enter で次/前へ
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (e.shiftKey) goPrevHit();
+                    else goNextHit();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setInlineSearchOpen(false);
+                    setInlineSearchQuery('');
+                  }
+                }}
+              />
+              {inlineSearchQuery.length > 0 && (
+                <button
+                  type="button"
+                  className="sidebar__inline-search-clear"
+                  onClick={() => setInlineSearchQuery('')}
+                  title="入力をクリア"
+                  aria-label="入力をクリア"
+                  // mousedown で input から focus が外れるのを防ぐ
+                  onMouseDown={(e) => e.preventDefault()}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
             <button
               type="button"
               className="sidebar__inline-search-nav"
@@ -869,6 +884,9 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
           <>
           <div
             className={`sidebar__list ${rootDragOver ? 'is-root-dragover' : ''}`}
+            data-note-kebab={settings.noteKebabVisibility}
+            data-folder-kebab={settings.folderKebabVisibility}
+            data-folder-count={settings.folderCountVisibility}
             onDragOver={handleRootDragOver}
             onDragLeave={handleRootDragLeave}
             onDrop={handleRootDrop}
@@ -1096,6 +1114,19 @@ function renderHighlighted(title: string, query: string) {
   return <>{parts}</>;
 }
 
+/**
+ * フォルダノード配下のファイル (= ノート) を再帰的にカウントする。
+ * サブフォルダ内のノートも合算する。
+ */
+function countNotesInTree(nodes: readonly TreeNode[]): number {
+  let n = 0;
+  for (const node of nodes) {
+    if (node.kind === 'file') n++;
+    else n += countNotesInTree(node.children);
+  }
+  return n;
+}
+
 function TreeView({
   nodes,
   depth,
@@ -1125,6 +1156,9 @@ function TreeView({
           const open = isExpanded(node.path);
           const isDragOver = dragOverFolder === node.path;
           const isCurrentFolderHit = currentHitFolderPath === node.path;
+          // フォルダ配下 (サブフォルダ含む) のノート総数。
+          // 0 件のときはバッジを出さない。
+          const noteCount = countNotesInTree(node.children);
           return (
             <li
               key={`d:${node.path}`}
@@ -1157,6 +1191,15 @@ function TreeView({
                     {renderHighlighted(node.name, highlightQuery)}
                   </span>
                 </button>
+                {noteCount > 0 && (
+                  <span
+                    className="tree__folder-count"
+                    title={`このフォルダ内のノート: ${noteCount} 件`}
+                    aria-label={`${noteCount} ノート`}
+                  >
+                    {noteCount}
+                  </span>
+                )}
                 <button
                   type="button"
                   className="tree__menu-btn"
