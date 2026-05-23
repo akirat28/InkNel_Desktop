@@ -1,7 +1,7 @@
 {
   "name": "inknel-elec",
   "productName": "InkNel",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": true,
   "type": "module",
   "description": "Markdown memo app for desktop (Electron) with future cloud sync",
