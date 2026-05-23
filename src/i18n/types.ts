@@ -225,6 +225,7 @@ export interface Locale {
       storage: string;
       calendar: string;
       plugins: string;
+      maintenance: string;
       backup: string;
       restore: string;
       reset: string;

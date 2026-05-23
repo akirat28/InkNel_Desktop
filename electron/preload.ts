@@ -159,8 +159,29 @@ contextBridge.exposeInMainWorld('api', {
     > {
       return ipcRenderer.invoke('notes:import-dir');
     },
+    /** ゴミ箱に移動 (実体は残し、復元可能)。.md は保存先から削除される */
     delete(id: string): Promise<void> {
       return ipcRenderer.invoke('notes:delete', id);
+    },
+    /** ゴミ箱内ノート一覧 */
+    listTrashed(): Promise<NoteMeta[]> {
+      return ipcRenderer.invoke('notes:list-trashed');
+    },
+    /** ゴミ箱から復元 (.md を再書き出し) */
+    restore(id: string): Promise<NoteMeta | null> {
+      return ipcRenderer.invoke('notes:restore', id);
+    },
+    /** ゴミ箱を空にする (物理削除)。削除した id を返す */
+    emptyTrash(): Promise<string[]> {
+      return ipcRenderer.invoke('notes:empty-trash');
+    },
+    /** ゴミ箱内で指定日数以上経過したノートを物理削除 */
+    purgeOldTrash(daysOld: number): Promise<string[]> {
+      return ipcRenderer.invoke('notes:purge-old-trash', daysOld);
+    },
+    /** ゴミ箱内のノートを物理削除 (ゴミ箱内のみ) */
+    deletePermanent(id: string): Promise<void> {
+      return ipcRenderer.invoke('notes:delete-permanent', id);
     },
   },
 
@@ -237,6 +258,10 @@ contextBridge.exposeInMainWorld('api', {
     resetAll(): Promise<void> {
       return ipcRenderer.invoke('app:reset-all');
     },
+    /** データに触らずアプリを再起動するだけ */
+    relaunch(): Promise<void> {
+      return ipcRenderer.invoke('app:relaunch');
+    },
   },
 
   backup: {
@@ -258,6 +283,40 @@ contextBridge.exposeInMainWorld('api', {
     /** 保存先フォルダ選択ダイアログを開く。選択されたパス、または null */
     chooseFolder(): Promise<string | null> {
       return ipcRenderer.invoke('storage:choose-folder');
+    },
+    /**
+     * 現在の保存先 (notes/ images/ attachments/ plugins/) を新フォルダにコピー
+     * してから storage.path 設定を切り替える。古いフォルダは残す (安全側)。
+     */
+    migrateTo(
+      targetRoot: string,
+    ): Promise<{ copied: number; skipped: number; newRoot: string }> {
+      return ipcRenderer.invoke('storage:migrate-to', targetRoot);
+    },
+    /**
+     * DB の notes / folders を空にしてから storage.path を新フォルダに切り替える。
+     * 保存先のファイル群はコピーも削除もしない (DB 初期化のみ + パス変更)。
+     */
+    resetAndSet(targetRoot: string): Promise<{ newRoot: string }> {
+      return ipcRenderer.invoke('storage:reset-and-set', targetRoot);
+    },
+    /**
+     * 全ノート本文から参照されていない画像/添付ファイル (orphan) の一覧を返す。
+     */
+    scanOrphans(): Promise<
+      Array<{
+        filename: string;
+        kind: 'images' | 'attachments';
+        size: number;
+      }>
+    > {
+      return ipcRenderer.invoke('storage:scan-orphans');
+    },
+    /** 指定した orphan ファイルを削除 (サーバ側でも参照を再チェック) */
+    deleteOrphans(
+      targets: Array<{ filename: string; kind: 'images' | 'attachments' }>,
+    ): Promise<{ deleted: number; failed: number }> {
+      return ipcRenderer.invoke('storage:delete-orphans', targets);
     },
     /** 保存先と DB の差分をスキャンして返す（タイムスタンプベース） */
     scan(): Promise<{

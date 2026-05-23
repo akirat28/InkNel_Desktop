@@ -9,6 +9,7 @@ import {
 } from 'electron';
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -24,6 +25,7 @@ import { basename, extname, join, relative, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
   listNotes,
+  listTrashedNotes,
   getNote,
   insertNote,
   updateNoteMeta,
@@ -33,6 +35,10 @@ import {
   addNoteLink,
   removeNoteLink,
   deleteNote,
+  trashNote,
+  restoreNote,
+  emptyTrash,
+  purgeOldTrash,
   searchNotes,
   upsertNoteFromSyncWithBody,
   type NoteMeta,
@@ -53,12 +59,18 @@ import {
   writeNoteFile,
   deleteBody,
 } from './storage/notesFiles';
-import { saveImage, imageExists, deleteImage } from './storage/imagesFiles';
+import {
+  saveImage,
+  imageExists,
+  deleteImage,
+  imagesDir,
+} from './storage/imagesFiles';
 import {
   saveAttachment,
   attachmentExists,
   attachmentPath,
   deleteAttachment,
+  attachmentsDir,
 } from './storage/attachmentsFiles';
 import {
   clearStorageRootCache,
@@ -1191,6 +1203,7 @@ export function registerIpc(): void {
         linkedNoteIds: [],
         createdAt: now,
         updatedAt: now,
+        trashedAt: null,
       };
       insertNote(meta, input.body ?? '');
       writeNoteFile(meta, input.body ?? '');
@@ -1350,16 +1363,97 @@ export function registerIpc(): void {
     },
   );
 
+  /**
+   * 削除 = ゴミ箱に移動 (trashed_at をセット)。
+   * `.md` ファイル / クラウド側コピーは消すが、DB 上のレコードと body は残るので
+   * 復元すれば再生できる。30 日後に purgeOldTrash で自動物理削除される。
+   */
   ipcMain.handle('notes:delete', (_e, id: string): void => {
     const note = getNote(id);
     if (!note) return;
     if (note.protected) {
       throw new Error('保護されているノートは削除できません');
     }
-    deleteNote(id);
+    trashNote(id);
+    // ゴミ箱送りなので保存先 .md とクラウドコピーは消す (DB body は残す)
     deleteBody(id);
     const p = getActiveShareProvider();
     if (p !== 'none') removeSingleNote(p, id);
+  });
+
+  /** ゴミ箱内ノート一覧 */
+  ipcMain.handle('notes:list-trashed', (): NoteMeta[] => {
+    return listTrashedNotes();
+  });
+
+  /**
+   * ゴミ箱から復元 (trashed_at を NULL に戻し、DB body から .md を再書き出し)。
+   * 保護ノートのパスワード確認は renderer 側で行う。
+   */
+  ipcMain.handle('notes:restore', (_e, id: string): NoteMeta | null => {
+    const restored = restoreNote(id);
+    if (!restored) return null;
+    // body は DB に残してあるのでそれを使って .md を書き戻す
+    try {
+      const body = readBody(restored.id) || '';
+      writeNoteFile(restored, body);
+    } catch (err) {
+      console.warn('[notes:restore] writeNoteFile failed:', err);
+    }
+    // クラウドへ push (共有していれば他デバイスにも反映)
+    const p = getActiveShareProvider();
+    if (p !== 'none') pushSingleNote(p, id);
+    return restored;
+  });
+
+  /** ゴミ箱を空にする (物理削除)。削除した id 配列を返す */
+  ipcMain.handle('notes:empty-trash', (): string[] => {
+    const ids = emptyTrash();
+    // ファイルとクラウドはすでに trash 移動時に削除済み。
+    // 念のため deleteBody は呼んでおく (再復元前に手動で .md を作った場合等のケア)
+    for (const id of ids) {
+      try {
+        deleteBody(id);
+      } catch {
+        /* 既に無くても OK */
+      }
+    }
+    return ids;
+  });
+
+  /**
+   * ゴミ箱内で指定日数経過のノートを物理削除する (起動時に呼ぶ想定)。
+   * 削除した id 配列を返す。
+   */
+  ipcMain.handle(
+    'notes:purge-old-trash',
+    (_e, daysOld: number): string[] => {
+      const ids = purgeOldTrash(typeof daysOld === 'number' ? daysOld : 30);
+      for (const id of ids) {
+        try {
+          deleteBody(id);
+        } catch {
+          /* 既に無くても OK */
+        }
+      }
+      return ids;
+    },
+  );
+
+  /** ゴミ箱内の単一ノートを物理削除 (UI の「完全に削除」用) */
+  ipcMain.handle('notes:delete-permanent', (_e, id: string): void => {
+    const note = getNote(id);
+    if (!note) return;
+    if (!note.trashedAt) {
+      // 安全策: ゴミ箱に入っていないノートは物理削除させない
+      throw new Error('ゴミ箱に入っていないノートは完全削除できません');
+    }
+    deleteNote(id);
+    try {
+      deleteBody(id);
+    } catch {
+      /* 既に無くても OK */
+    }
   });
 
   // ----- folders -----
@@ -1481,15 +1575,28 @@ export function registerIpc(): void {
    * 2. SQLite を閉じて DB ファイルと WAL を削除
    * 3. アプリを再起動
    *
-   * 注: **保存先フォルダの `.md` / 画像 / 添付ファイルは削除しない**。
-   * iCloud 等の共有フォルダを使っている場合、他デバイスへ影響が及ぶため。
-   * 初期化後は disk のファイルが残るので、再起動後に「同期」を押すことで
-   * 必要なノートを取り込み直すこともできる。
+   * 注: **保存先フォルダの `.md` / 画像 / 添付も削除する**。
+   * 共有ストレージを利用している場合は他デバイスにも影響が及ぶ点に注意。
    *
    * 呼び出し前に renderer 側で確認 UI を出すこと（テキスト入力 "初期化" で確定）。
    */
   ipcMain.handle('app:reset-all', async (): Promise<void> => {
-    // (1) テーブルを空にする（ファイル削除に失敗してもデータは消える）
+    // (1) 保存先フォルダの notes/ images/ attachments/ を削除。
+    //   先に取得してから DB を壊すのは、storage.path 設定を消す前にパスを
+    //   解決する必要があるため。
+    const storageRoot = getStorageRoot();
+    for (const sub of ['notes', 'images', 'attachments']) {
+      const target = join(storageRoot, sub);
+      try {
+        if (existsSync(target)) {
+          rmSync(target, { recursive: true, force: true });
+        }
+      } catch (err) {
+        console.warn('[app:reset-all] removing', target, 'failed:', err);
+      }
+    }
+
+    // (2) テーブルを空にする（ファイル削除に失敗してもデータは消える）
     try {
       const db = initDb();
       const tx = db.transaction(() => {
@@ -1513,15 +1620,15 @@ export function registerIpc(): void {
       console.warn('[app:reset-all] truncate failed:', err);
     }
 
-    // (2) SQLite を閉じる
+    // (3) SQLite を閉じる
     try {
       closeDb();
     } catch {
       /* 既に閉じていれば無視 */
     }
 
-    // (3) DB ファイル一式を削除（WAL / shm 含む）。OS が file lock 中なら
-    // unlinkSync が失敗するが、(1) で TRUNCATE 済みなのでデータ消去は確定。
+    // (4) DB ファイル一式を削除（WAL / shm 含む）。OS が file lock 中なら
+    // unlinkSync が失敗するが、(2) で TRUNCATE 済みなのでデータ消去は確定。
     const userData = app.getPath('userData');
     for (const f of ['inknel.db', 'inknel.db-wal', 'inknel.db-shm']) {
       try {
@@ -1531,13 +1638,123 @@ export function registerIpc(): void {
       }
     }
 
-    // 保存先フォルダ (storage root 配下の notes/ images/ attachments/) は
-    // **削除しない**。共有ストレージで他デバイスにも波及させないため。
-
-    // (4) 再起動
+    // (5) 再起動
     app.relaunch();
     app.exit(0);
   });
+
+  /** データに触らずアプリを再起動する (保存先変更後などに使用) */
+  ipcMain.handle('app:relaunch', (): void => {
+    app.relaunch();
+    app.exit(0);
+  });
+
+  // ============================================================
+  // リンク切れ (orphan) の画像 / 添付ファイル走査・削除
+  // ============================================================
+  // images/<sha256>.<ext> / attachments/<sha256>.<ext> は本文 markdown 上で
+  //   `images/<hash>.<ext>` / `attachments/<hash>.<ext>` の形で参照される。
+  // 全ノート本文を結合してその参照を抽出し、参照されていないファイルを
+  // 「リンク切れ」と判定する。
+  const collectAllBodies = (): string => {
+    const parts: string[] = [];
+    for (const note of listNotes()) {
+      try {
+        parts.push(readBody(note.id));
+      } catch {
+        // 単一ノート読みに失敗しても継続 (他ノートで参照されていれば OK)
+      }
+    }
+    return parts.join('\n');
+  };
+
+  const scanOrphansInDir = (
+    dir: string,
+    kind: 'images' | 'attachments',
+    bodies: string,
+  ): Array<{ filename: string; kind: 'images' | 'attachments'; size: number }> => {
+    if (!existsSync(dir)) return [];
+    let entries: string[] = [];
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      return [];
+    }
+    const out: Array<{
+      filename: string;
+      kind: 'images' | 'attachments';
+      size: number;
+    }> = [];
+    for (const name of entries) {
+      // 想定形式 <sha256>.<ext> 以外は触らない (.DS_Store 等を保護)
+      if (!/^[a-f0-9]{64}\.[a-z0-9]{2,5}$/i.test(name)) continue;
+      const needle = `${kind}/${name}`;
+      if (bodies.includes(needle)) continue;
+      let size = 0;
+      try {
+        size = statSync(join(dir, name)).size;
+      } catch {
+        // size 取得失敗は 0 のまま
+      }
+      out.push({ filename: name, kind, size });
+    }
+    return out;
+  };
+
+  /** リンク切れの画像 / 添付ファイル一覧を返す (削除はしない) */
+  ipcMain.handle(
+    'storage:scan-orphans',
+    (): Array<{
+      filename: string;
+      kind: 'images' | 'attachments';
+      size: number;
+    }> => {
+      const bodies = collectAllBodies();
+      const imgs = scanOrphansInDir(imagesDir(), 'images', bodies);
+      const atts = scanOrphansInDir(attachmentsDir(), 'attachments', bodies);
+      return [...imgs, ...atts];
+    },
+  );
+
+  /**
+   * 指定されたリンク切れファイル群を削除する。
+   * 引数の `targets` を信用せずに、サーバ側で再走査して「現在も orphan であるか」
+   * 確認してから削除する (安全のため二重チェック)。
+   */
+  ipcMain.handle(
+    'storage:delete-orphans',
+    (
+      _e,
+      targets: Array<{ filename: string; kind: 'images' | 'attachments' }>,
+    ): { deleted: number; failed: number } => {
+      if (!Array.isArray(targets) || targets.length === 0) {
+        return { deleted: 0, failed: 0 };
+      }
+      const bodies = collectAllBodies();
+      let deleted = 0;
+      let failed = 0;
+      for (const target of targets) {
+        if (
+          !target ||
+          (target.kind !== 'images' && target.kind !== 'attachments')
+        )
+          continue;
+        if (!/^[a-f0-9]{64}\.[a-z0-9]{2,5}$/i.test(target.filename)) continue;
+        const needle = `${target.kind}/${target.filename}`;
+        if (bodies.includes(needle)) continue; // 二重チェックで参照あり → スキップ
+        const dir = target.kind === 'images' ? imagesDir() : attachmentsDir();
+        const full = join(dir, target.filename);
+        try {
+          unlinkSync(full);
+          deleted++;
+        } catch (err) {
+          console.warn('[storage:delete-orphans] failed for', full, err);
+          failed++;
+        }
+      }
+      return { deleted, failed };
+    },
+  );
 
   ipcMain.handle(
     'storage:choose-folder',
@@ -1549,6 +1766,115 @@ export function registerIpc(): void {
       });
       if (result.canceled || result.filePaths.length === 0) return null;
       return result.filePaths[0];
+    },
+  );
+
+  /**
+   * DB の notes / folders テーブルを空にしてから設定 `storage.path` を
+   * `targetRoot` に切り替える。保存先フォルダの .md ファイル等は削除しない。
+   * 再起動後は「新しい保存先 + 空の DB」状態で起動する。
+   * 後で「保存先と同期」を実行すれば、新保存先の .md を DB に取り込める。
+   */
+  ipcMain.handle(
+    'storage:reset-and-set',
+    async (_e, targetRoot: string): Promise<{ newRoot: string }> => {
+      if (typeof targetRoot !== 'string' || !targetRoot.trim()) {
+        throw new Error('targetRoot is required');
+      }
+      const target = targetRoot.trim();
+      if (!existsSync(target) || !statSync(target).isDirectory()) {
+        throw new Error('targetRoot is not an existing directory');
+      }
+      try {
+        const db = initDb();
+        const tx = db.transaction(() => {
+          db.exec('DELETE FROM notes');
+          db.exec('DELETE FROM folders');
+        });
+        tx();
+        try {
+          db.pragma('wal_checkpoint(TRUNCATE)');
+        } catch {
+          // 失敗しても続行
+        }
+      } catch (err) {
+        console.warn('[storage:reset-and-set] DB clear failed:', err);
+        throw err;
+      }
+      setSetting(STORAGE_PATH_SETTING_KEY, target);
+      clearStorageRootCache();
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send('settings:changed');
+      }
+      return { newRoot: target };
+    },
+  );
+
+  /**
+   * 現在の保存先 (`getStorageRoot()`) 配下の notes/ images/ attachments/ plugins/
+   * を `targetRoot` にコピーしてから、設定 `storage.path` を `targetRoot` に切り替える。
+   *
+   * 同名ファイルは新ルート側を上書き (force: true)。コピー後に古いフォルダの
+   * 中身は削除しない (ユーザーが手動でクリーンアップする想定。安全側に倒す)。
+   *
+   * targetRoot がそのまま現ルートと一致する場合は no-op。
+   */
+  ipcMain.handle(
+    'storage:migrate-to',
+    async (
+      _e,
+      targetRoot: string,
+    ): Promise<{ copied: number; skipped: number; newRoot: string }> => {
+      if (typeof targetRoot !== 'string' || !targetRoot.trim()) {
+        throw new Error('targetRoot is required');
+      }
+      const target = targetRoot.trim();
+      if (!existsSync(target) || !statSync(target).isDirectory()) {
+        throw new Error('targetRoot is not an existing directory');
+      }
+      const source = getStorageRoot();
+      if (source === target) {
+        // 同一なら設定だけ書き換えて返す (差分なし)
+        setSetting(STORAGE_PATH_SETTING_KEY, target);
+        clearStorageRootCache();
+        return { copied: 0, skipped: 0, newRoot: target };
+      }
+
+      const SUBDIRS = ['notes', 'images', 'attachments', 'plugins'];
+      let copied = 0;
+      let skipped = 0;
+      for (const sub of SUBDIRS) {
+        const from = join(source, sub);
+        const to = join(target, sub);
+        if (!existsSync(from)) {
+          skipped++;
+          continue;
+        }
+        try {
+          mkdirSync(to, { recursive: true });
+          // cpSync は Node 16.7+ で利用可。recursive: true でディレクトリ丸ごとコピー。
+          // force: true で同名ファイルを上書き、preserveTimestamps で mtime を維持
+          // (時系列ベースの sync を破壊しない)。
+          cpSync(from, to, {
+            recursive: true,
+            force: true,
+            preserveTimestamps: true,
+          });
+          copied++;
+        } catch (err) {
+          console.warn('[storage:migrate-to] failed for', sub, err);
+          throw err;
+        }
+      }
+
+      // 設定書き換え。clearStorageRootCache 経由で次回 I/O から新ルートが解決される。
+      setSetting(STORAGE_PATH_SETTING_KEY, target);
+      clearStorageRootCache();
+      // 他ウィンドウにも settings 変更を通知
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send('settings:changed');
+      }
+      return { copied, skipped, newRoot: target };
     },
   );
 
@@ -1696,6 +2022,7 @@ export function registerIpc(): void {
               : [],
             createdAt: meta.createdAt ?? diskUpdated,
             updatedAt: diskUpdated,
+            trashedAt: null,
           };
           // 'missing' / 'newer' どちらも冪等な upsert で処理する。
           // buildSyncPlan は実行開始時点のスナップショットなので、
@@ -2690,6 +3017,7 @@ export function registerIpc(): void {
               : [],
             createdAt: meta.createdAt ?? diskUpdated,
             updatedAt: diskUpdated,
+            trashedAt: null,
           };
           upsertNoteFromSyncWithBody(noteMeta, body);
           imported++;

@@ -33,6 +33,7 @@ import logoUrl from './assets/logo.png';
 import {
   DEFAULT_SETTINGS,
   FONT_FAMILY_OPTIONS,
+  FONT_SIZE_OPTIONS,
   getActiveAiSettings,
   parseSettings,
   settingToRecord,
@@ -40,6 +41,7 @@ import {
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
   type AppSettings,
+  type FontSize,
 } from './settings';
 import {
   extractAttachmentRefs,
@@ -147,6 +149,8 @@ export default function App() {
     window.location.hash === '#/preferences';
   // ----- ノート一覧 / 選択中ノート -----
   const [notes, setNotes] = useState<NoteMeta[]>([]);
+  // ゴミ箱内ノート (notes とは別管理。Sidebar の「ゴミ箱」セクションに表示)
+  const [trashedNotes, setTrashedNotes] = useState<NoteMeta[]>([]);
   const [folders, setFolders] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [body, setBody] = useState<string>('');
@@ -687,6 +691,62 @@ export default function App() {
     aiChatWidthRef.current = aiChatWidth;
   }, [aiChatWidth]);
 
+  // ============================================================
+  // メイン画面の Cmd/Ctrl + ホイールでフォントサイズを増減
+  // ============================================================
+  // macOS は metaKey、Windows/Linux は ctrlKey をズーム修飾キーとする (ブラウザの慣行)。
+  // wheel イベントは passive デフォルト true なので preventDefault のため
+  // capture/passive: false で手動 attach する必要がある。
+  // 変更時に中央へ現在サイズをチップ表示する (fontSizeIndicator)。
+  const [fontSizeIndicator, setFontSizeIndicator] = useState<number | null>(
+    null,
+  );
+  const fontSizeIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  useEffect(() => {
+    const target = workspaceRef.current;
+    if (!target) return;
+    const isMac =
+      typeof navigator !== 'undefined' &&
+      /Mac|iPhone|iPod|iPad/.test(navigator.platform);
+
+    const onWheel = (e: WheelEvent) => {
+      const zoomKey = isMac ? e.metaKey : e.ctrlKey;
+      if (!zoomKey) return;
+      e.preventDefault();
+      // 上 (deltaY < 0) で拡大、下で縮小
+      const direction = e.deltaY < 0 ? +1 : -1;
+      const current = settings.fontSize as number;
+      const min = FONT_SIZE_OPTIONS[0];
+      const max = FONT_SIZE_OPTIONS[FONT_SIZE_OPTIONS.length - 1];
+      const next = Math.min(max, Math.max(min, current + direction));
+      // 端での操作でも視覚フィードバックは出す
+      setFontSizeIndicator(next);
+      if (fontSizeIndicatorTimerRef.current) {
+        clearTimeout(fontSizeIndicatorTimerRef.current);
+      }
+      fontSizeIndicatorTimerRef.current = setTimeout(() => {
+        setFontSizeIndicator(null);
+        fontSizeIndicatorTimerRef.current = null;
+      }, 900);
+      if (next === current) return;
+      void handleSettingChange('fontSize', next as FontSize);
+    };
+
+    // passive: false で preventDefault を呼べるようにする
+    target.addEventListener('wheel', onWheel, { passive: false });
+    return () => target.removeEventListener('wheel', onWheel);
+  }, [settings.fontSize, handleSettingChange]);
+  // アンマウント時にタイマー残骸を掃除
+  useEffect(() => {
+    return () => {
+      if (fontSizeIndicatorTimerRef.current) {
+        clearTimeout(fontSizeIndicatorTimerRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (!aiChatResizing) return;
 
@@ -944,12 +1004,14 @@ export default function App() {
         }
         return;
       }
-      const [list, folderList, rawSettings] = await Promise.all([
+      const [list, trashed, folderList, rawSettings] = await Promise.all([
         window.api.notes.list(),
+        window.api.notes.listTrashed(),
         window.api.folders.list(),
         window.api.settings.getAll(),
       ]);
       setNotes(list);
+      setTrashedNotes(trashed);
       setFolders(folderList);
       const parsed = parseSettings(rawSettings);
       setSettings(parsed);
@@ -1862,8 +1924,12 @@ export default function App() {
         );
         return;
       }
-      const list = await window.api.notes.list();
+      const [list, trashed] = await Promise.all([
+        window.api.notes.list(),
+        window.api.notes.listTrashed(),
+      ]);
       setNotes(list);
+      setTrashedNotes(trashed);
 
       // 削除されたノートをタブリスト・タブ状態から除去
       const idx = openTabIds.indexOf(id);
@@ -1943,6 +2009,102 @@ export default function App() {
       leafName,
     });
   }, []);
+
+  // ============================================================
+  // ゴミ箱関連ハンドラ
+  // ============================================================
+
+  /** ゴミ箱内ノート一覧を再取得 */
+  const refreshTrashedNotes = useCallback(async () => {
+    try {
+      const list = await window.api.notes.listTrashed();
+      setTrashedNotes(list);
+    } catch (err) {
+      console.warn('[trash] listTrashed failed:', err);
+    }
+  }, []);
+
+  /**
+   * ゴミ箱から復元。保護ノートはパスワード入力を要求する。
+   * 復元成功後、通常ノート一覧とゴミ箱一覧の両方を更新。
+   */
+  const handleRestoreNote = useCallback(
+    async (id: string) => {
+      const target = trashedNotes.find((n) => n.id === id);
+      if (!target) return;
+      // 保護ノートは復元前にパスワードを要求 (誤復元防止)
+      if (target.protected) {
+        const input = window.prompt(
+          `保護されたノート「${target.title}」を復元します。\nパスワードを入力してください:`,
+          '',
+        );
+        if (input === null) return;
+        if (input !== settings.protectionPassword) {
+          window.alert('パスワードが違います');
+          return;
+        }
+      }
+      try {
+        await window.api.notes.restore(id);
+      } catch (err) {
+        window.alert(
+          err instanceof Error ? err.message : '復元に失敗しました',
+        );
+        return;
+      }
+      const [list, trashed] = await Promise.all([
+        window.api.notes.list(),
+        window.api.notes.listTrashed(),
+      ]);
+      setNotes(list);
+      setTrashedNotes(trashed);
+    },
+    [trashedNotes, settings.protectionPassword],
+  );
+
+  /** ゴミ箱内ノートを完全に削除 (1 件) */
+  const handleDeletePermanent = useCallback(
+    async (id: string) => {
+      const target = trashedNotes.find((n) => n.id === id);
+      if (!target) return;
+      if (
+        !window.confirm(
+          `ノート「${target.title}」を完全に削除しますか?\n取り消しできません。`,
+        )
+      )
+        return;
+      try {
+        await window.api.notes.deletePermanent(id);
+      } catch (err) {
+        window.alert(
+          err instanceof Error ? err.message : '削除に失敗しました',
+        );
+        return;
+      }
+      await refreshTrashedNotes();
+    },
+    [trashedNotes, refreshTrashedNotes],
+  );
+
+  /** ゴミ箱を空にする (確認後にすべて物理削除) */
+  const handleEmptyTrash = useCallback(async () => {
+    if (trashedNotes.length === 0) return;
+    if (
+      !window.confirm(
+        `ゴミ箱の ${trashedNotes.length} 件のノートをすべて完全に削除しますか?\n取り消しできません。`,
+      )
+    )
+      return;
+    try {
+      await window.api.notes.emptyTrash();
+    } catch (err) {
+      window.alert(
+        err instanceof Error ? err.message : 'ゴミ箱を空にできませんでした',
+      );
+      return;
+    }
+    await refreshTrashedNotes();
+  }, [trashedNotes, refreshTrashedNotes]);
 
   // ----- フォルダごと削除 -----
   // 確認ダイアログを出してから、フォルダ＋配下のノート・サブフォルダを全削除。
@@ -2942,6 +3104,10 @@ export default function App() {
           settings={settings}
           onSettingsChange={handleSettingChange}
           onPluginCreateNote={handlePluginCreateNote}
+          trashedNotes={trashedNotes}
+          onRestoreNote={(id) => void handleRestoreNote(id)}
+          onDeletePermanent={(id) => void handleDeletePermanent(id)}
+          onEmptyTrash={() => void handleEmptyTrash()}
         />
         <main className="app__main">
           <TabBar
@@ -2969,6 +3135,18 @@ export default function App() {
             pinIndicatorEnabled={!settings.openNoteInNewTab}
           />
           <div className="app__workspace" ref={workspaceRef}>
+            {fontSizeIndicator !== null && (
+              <div
+                className="font-size-indicator"
+                role="status"
+                aria-live="polite"
+              >
+                <span className="font-size-indicator__value">
+                  {fontSizeIndicator}
+                </span>
+                <span className="font-size-indicator__unit">px</span>
+              </div>
+            )}
             <div
               className="app__note-pane"
               onDragOver={handleNoteDragOver}
