@@ -148,6 +148,7 @@ export interface Locale {
     closeOthers: string;
     closeThis: string;
     closeToRight: string;
+    deleteThis: string;
   };
 
   tagBar: {
@@ -171,14 +172,16 @@ export interface Locale {
   /** TabBar の「AIでノートを整形・要約」ボタンから開くメニュー */
   aiTransformMenu: {
     header: string; // 「ノートを整形」(disabled ヘッダ)
-    summarizeByHeading: string; // 「見出し単位で要約」
+    convertHtmlToMarkdown: string; // 「構造は変えず Markdown に変換」
+    summarizeWhole: string; // 「ノートを要約する」
     generateTitleFromContent: string; // 「ノートの内容からタイトル作成」
+    summarizeByHeading: string; // 「見出し単位で要約」
     organizeBullets: string; // 「箇条書きを整理」
-    improveCodeBlocks: string; // 「コードブロックだけ改善」
     formatTables: string; // 「表だけ整形」
-    convertHtmlToMarkdown: string; // 「構造を保持してMarkdownに変換」
-    convertToSchedule: string; // 「メモをスケジュールに変換」
-    convertToChecklist: string; // 「メモをチェックリストに変換」
+    improveCodeBlocks: string; // 「コードブロックだけ改善」
+    dialectKansai: string; // 「関西弁にする」
+    dialectInaka: string; // 「文章に「ズラ」をつける」
+    makeQuiz: string; // 「問題集を作って」
     undoLast: string; // 「直前のAI整形を取り消す」(直前整形がある時だけ先頭に出る)
   };
 

@@ -8,7 +8,9 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 import ActivityBar from './components/ActivityBar';
-import AiChatPanel from './components/AiChatPanel';
+import AiChatPanel, {
+  type PersistedChatState,
+} from './components/AiChatPanel';
 import Editor, {
   type EditorHandle,
   type MacroAction,
@@ -26,6 +28,9 @@ import PreferencesModal from './components/PreferencesModal';
 import FindDialog from './components/FindDialog';
 import PasswordDialog from './components/PasswordDialog';
 import RenameDialog from './components/RenameDialog';
+import AiTransformResultModal, {
+  type AiResultPayload,
+} from './components/AiTransformResultModal';
 import ReplaceDialog from './components/ReplaceDialog';
 import MacroKeysDialog from './components/MacroKeysDialog';
 import SavedMacroDialog from './components/SavedMacroDialog';
@@ -214,6 +219,12 @@ export default function App() {
     null,
   );
   const [aiChatOpen, setAiChatOpen] = useState<boolean>(false);
+  // ノートごとに独立した AI チャット状態を保持する Map。
+  // - AiChatPanel は `key={activeId}` で再マウントされるので、ノートを切り替えると
+  //   新しい (もしくは Map から復元された) 状態で表示される。
+  // - タブを閉じる時、ピン留めされていない (= 編集中ではない) ノートのチャットは
+  //   破棄。ピン留めタブは Map に残し、再選択時に途中まで入った状態を復元する。
+  const chatStatesRef = useRef<Map<string, PersistedChatState>>(new Map());
 
   // ----- 保護の解錠状態 -----
   // セッション中に正しいパスワードを入れた対象ノート ID の集合。
@@ -1865,6 +1876,14 @@ export default function App() {
       if (previewTabId && idsSet.has(previewTabId)) {
         setPreviewTabId(null);
       }
+      // AI チャット状態の破棄: 閉じる対象のうちピン留めされていない (= 編集中
+      // ではない) ノートは、チャット履歴も一緒にクリアする。ピン留めタブは
+      // Map に残しておき、再選択時に途中まで入った状態を復元する。
+      for (const id of idsSet) {
+        if (!pinnedTabIds.includes(id)) {
+          chatStatesRef.current.delete(id);
+        }
+      }
       // ピンタブが閉じる対象に含まれていれば pinnedTabIds からも除去
       setPinnedTabIds((prev) => {
         const next = prev.filter((id) => !idsSet.has(id));
@@ -1934,6 +1953,9 @@ export default function App() {
       setTrashedNotes(trashed);
 
       // 削除されたノートをタブリスト・タブ状態から除去
+      // ノート自体が消えるので、ピン留めの有無にかかわらず AI チャット履歴も破棄。
+      chatStatesRef.current.delete(id);
+
       const idx = openTabIds.indexOf(id);
       const wasOpen = idx >= 0;
       if (wasOpen) {
@@ -1950,6 +1972,9 @@ export default function App() {
           next.delete(id);
           return next;
         });
+        setPinnedTabIds((prev) =>
+          prev.includes(id) ? prev.filter((x) => x !== id) : prev,
+        );
 
         if (id === activeId) {
           const nextActive =
@@ -2631,6 +2656,21 @@ export default function App() {
     bodyAfterTransform: string;
   } | null>(null);
 
+  /**
+   * AI 整形の実行結果プレビューモーダル。
+   * - runAiTransform が AI 応答を取得したらここに詰めてモーダルを開く
+   * - ユーザーが「適用」した時点で実際にノートへ書き戻す (apply 関数を保持)
+   * - エラー時は payload.kind = 'error' で理由だけ表示
+   */
+  const [aiResultModal, setAiResultModal] = useState<{
+    actionLabel: string;
+    noteTitle: string;
+    isBackground: boolean;
+    payload: AiResultPayload;
+    /** 「適用」で書き戻す処理。error 種別では呼ばれない */
+    apply: () => void;
+  } | null>(null);
+
   const runAiTransform = useCallback(
     async (action: AiAction) => {
       if (!activeId || aiBusy) return;
@@ -2657,16 +2697,22 @@ export default function App() {
         return;
       }
 
-      // 整形前の本文を退避（後で「取り消し」できるように）
+      // 実行時点のノート ID / 本文を退避。AI 応答が返ってくる前にユーザーが
+      // タブを切り替えても、書き戻し先は「メニューを開いた瞬間にアクティブだった
+      // このノート」に固定する。
+      // モーダルでユーザーが「適用」を押すまでは何も書き戻さない。
       const snapshotBody = body;
       const snapshotNoteId = activeId;
+      const snapshotFolder = editingFolder;
+      const snapshotTags = editingTags;
+      const snapshotNoteTitle =
+        notes.find((n) => n.id === snapshotNoteId)?.title ?? editingTitle;
+      const actionLabel = locale.aiTransformMenu[action];
 
       setAiBusy(true);
       try {
-        // タイトル生成だけは「本文を AI に渡してタイトルだけを取得 → ノート名へ書き戻す」
-        // という別フロー。本文は変更しないので Undo スナップショットも積まない。
+        // ----- タイトル生成: 本文を AI に渡してタイトルだけを取得 -----
         if (action === 'generateTitleFromContent') {
-          // 全文を渡す（範囲選択があっても、ノート全体の概念をタイトル化する）
           const generated = await window.api.ai.transform({
             provider: settings.aiProvider,
             token: aiActive.token,
@@ -2684,14 +2730,48 @@ export default function App() {
             .trim()
             .slice(0, 20);
           if (!sanitized) {
-            window.alert('AIがタイトルを生成できませんでした。');
+            setAiResultModal({
+              actionLabel,
+              noteTitle: snapshotNoteTitle,
+              isBackground: false,
+              payload: {
+                kind: 'error',
+                message:
+                  'AIがタイトルを生成できませんでした。本文を確認してもう一度お試しください。',
+              },
+              apply: () => {},
+            });
             return;
           }
-          setEditingTitle(sanitized);
-          scheduleMetaSave(sanitized, editingFolder, editingTags);
+          setAiResultModal({
+            actionLabel,
+            noteTitle: snapshotNoteTitle,
+            isBackground: snapshotNoteId !== activeId,
+            payload: { kind: 'title', title: sanitized },
+            apply: () => {
+              // 適用: 実行時の snapshotNoteId に書き戻す。アクティブが変わっていれば
+              // DB 直接 update、一致していれば従来の編集フローでタイトルを更新する。
+              if (activeId === snapshotNoteId) {
+                setEditingTitle(sanitized);
+                scheduleMetaSave(sanitized, snapshotFolder, snapshotTags);
+              } else {
+                void window.api.notes
+                  .updateMeta(snapshotNoteId, { title: sanitized })
+                  .then(() => window.api.notes.list())
+                  .then((list) => setNotes(list))
+                  .catch((err) =>
+                    console.warn(
+                      '[ai-transform] background title update failed',
+                      err,
+                    ),
+                  );
+              }
+            },
+          });
           return;
         }
 
+        // ----- 本文整形系 -----
         const transformed = await window.api.ai.transform({
           provider: settings.aiProvider,
           token: aiActive.token,
@@ -2700,32 +2780,90 @@ export default function App() {
           action,
           content: targetText,
         });
-        let nextBody: string;
-        if (hasSelection && range && hasEditor) {
-          // 範囲整形は従来通り。CodeMirror の undo にも乗る
-          editorRef.current?.replaceRange(range.from, range.to, transformed);
-          nextBody =
-            snapshotBody.slice(0, range.from) +
-            transformed +
-            snapshotBody.slice(range.to);
-        } else if (hasEditor) {
-          // 全文整形でもエディタ経由で置換する。
-          // → Cmd/Ctrl+Z（CodeMirror の undo）で 1 ステップ戻せる
-          editorRef.current?.replaceRange(0, snapshotBody.length, transformed);
-          nextBody = transformed;
-        } else {
-          // プレビュー専用モード等、エディタが描画されていないケース
-          handleBodyChange(transformed);
-          nextBody = transformed;
+
+        if (!transformed.trim()) {
+          setAiResultModal({
+            actionLabel,
+            noteTitle: snapshotNoteTitle,
+            isBackground: snapshotNoteId !== activeId,
+            payload: {
+              kind: 'error',
+              message:
+                'AIが空の応答を返しました。本文を変えてもう一度お試しください。',
+            },
+            apply: () => {},
+          });
+          return;
         }
-        // スナップショットを差し替え（直前の整形のみ取り消せる）
-        setAiUndoSnapshot({
-          noteId: snapshotNoteId,
-          previousBody: snapshotBody,
-          bodyAfterTransform: nextBody,
+
+        // モーダルプレビュー用に整形後本文・適用処理を組み立てる。
+        // 範囲整形は実行時のスナップショットを基準に組み立てるので、後でタブを
+        // 切り替えていても整合性が保たれる。
+        const previewBody =
+          hasSelection && range
+            ? snapshotBody.slice(0, range.from) +
+              transformed +
+              snapshotBody.slice(range.to)
+            : transformed;
+
+        setAiResultModal({
+          actionLabel,
+          noteTitle: snapshotNoteTitle,
+          isBackground: snapshotNoteId !== activeId,
+          payload: {
+            kind: 'body',
+            transformed: previewBody,
+            original: snapshotBody,
+          },
+          apply: () => {
+            // ----- 適用: 実行時の snapshotNoteId に対して書き戻す -----
+            const isStillActive = activeId === snapshotNoteId;
+            if (!isStillActive) {
+              // 裏に回ったノートは DB に直接書き戻し。現在見ているノートは触らない。
+              void window.api.notes
+                .updateBody(snapshotNoteId, previewBody)
+                .then(() => window.api.notes.list())
+                .then((list) => setNotes(list))
+                .catch((err) =>
+                  console.warn(
+                    '[ai-transform] background body update failed',
+                    err,
+                  ),
+                );
+              // undo スナップショットには積まない (現在見ているノートが Cmd/Ctrl+Z で
+              // 意図せず別ノートに巻き戻るのを防ぐ)
+              return;
+            }
+            if (hasSelection && range && hasEditor) {
+              editorRef.current?.replaceRange(range.from, range.to, transformed);
+            } else if (hasEditor) {
+              editorRef.current?.replaceRange(
+                0,
+                snapshotBody.length,
+                transformed,
+              );
+            } else {
+              handleBodyChange(previewBody);
+            }
+            setAiUndoSnapshot({
+              noteId: snapshotNoteId,
+              previousBody: snapshotBody,
+              bodyAfterTransform: previewBody,
+            });
+          },
         });
       } catch (err) {
-        window.alert(err instanceof Error ? err.message : String(err));
+        // ネットワーク失敗・API キー無効・モデル制限などの理由をモーダルで表示
+        setAiResultModal({
+          actionLabel,
+          noteTitle: snapshotNoteTitle,
+          isBackground: snapshotNoteId !== activeId,
+          payload: {
+            kind: 'error',
+            message: err instanceof Error ? err.message : String(err),
+          },
+          apply: () => {},
+        });
       } finally {
         setAiBusy(false);
       }
@@ -2736,8 +2874,11 @@ export default function App() {
       body,
       editingFolder,
       editingTags,
+      editingTitle,
       handleBodyChange,
       isActiveLocked,
+      locale,
+      notes,
       scheduleMetaSave,
       settings,
       view,
@@ -2834,14 +2975,23 @@ export default function App() {
         // クリック反応とも無効化される。
         { label: m.header, enabled: false },
         { separator: true },
-        { id: 'summarizeByHeading', label: m.summarizeByHeading },
-        { id: 'generateTitleFromContent', label: m.generateTitleFromContent },
-        { id: 'organizeBullets', label: m.organizeBullets },
-        { id: 'improveCodeBlocks', label: m.improveCodeBlocks },
-        { id: 'formatTables', label: m.formatTables },
+        // ── 1. Markdown 変換（構造を壊さない最も穏当な整形）
         { id: 'convertHtmlToMarkdown', label: m.convertHtmlToMarkdown },
-        { id: 'convertToSchedule', label: m.convertToSchedule },
-        { id: 'convertToChecklist', label: m.convertToChecklist },
+        { separator: true },
+        // ── 2. 全体要約
+        { id: 'summarizeWhole', label: m.summarizeWhole },
+        { separator: true },
+        // ── 3. 部分整形 (タイトル / 見出し / 箇条書き / 表 / コード)
+        { id: 'generateTitleFromContent', label: m.generateTitleFromContent },
+        { id: 'summarizeByHeading', label: m.summarizeByHeading },
+        { id: 'organizeBullets', label: m.organizeBullets },
+        { id: 'formatTables', label: m.formatTables },
+        { id: 'improveCodeBlocks', label: m.improveCodeBlocks },
+        { separator: true },
+        // ── 4. 文体変換系 (お遊び的な変換)
+        { id: 'dialectKansai', label: m.dialectKansai },
+        { id: 'dialectInaka', label: m.dialectInaka },
+        { id: 'makeQuiz', label: m.makeQuiz },
       );
       const action = await window.api.ui.showContextMenu({
         position,
@@ -3337,6 +3487,10 @@ export default function App() {
               />
             )}
             <AiChatPanel
+              // activeId が変わるたびに再マウント。ノートを切り替えると新しい
+              // チャットウィンドウが開いた状態になる。activeId 無しの状態
+              // (どのノートも開いていない) は専用 key にして 1 つの揮発インスタンスを共有。
+              key={activeId ?? '__no-note__'}
               onClose={() => setAiChatOpen(false)}
               settings={settings}
               noteTitle={activeNoteMeta?.title ?? ''}
@@ -3346,6 +3500,12 @@ export default function App() {
               width={aiChatWidth}
               collapsed={!aiChatOpen}
               resizing={aiChatResizing}
+              initialState={
+                activeId ? chatStatesRef.current.get(activeId) : undefined
+              }
+              onStateChange={(state) => {
+                if (activeId) chatStatesRef.current.set(activeId, state);
+              }}
               onNoteCreated={async (created) => {
                 const list = await window.api.notes.list();
                 setNotes(list);
@@ -3536,6 +3696,20 @@ export default function App() {
                 ? 'シークレット解除'
                 : '解錠'
         }
+      />
+      <AiTransformResultModal
+        open={aiResultModal !== null}
+        actionLabel={aiResultModal?.actionLabel ?? ''}
+        noteTitle={aiResultModal?.noteTitle ?? ''}
+        isBackground={aiResultModal?.isBackground ?? false}
+        payload={
+          aiResultModal?.payload ?? { kind: 'error', message: '' }
+        }
+        onApply={() => {
+          aiResultModal?.apply();
+          setAiResultModal(null);
+        }}
+        onClose={() => setAiResultModal(null)}
       />
       <RenameDialog
         open={renameTarget !== null}

@@ -274,14 +274,16 @@ export interface TemplateApi {
 }
 
 export type AiAction =
-  | 'summarizeByHeading'
-  | 'generateTitleFromContent'
-  | 'organizeBullets'
-  | 'improveCodeBlocks'
-  | 'formatTables'
   | 'convertHtmlToMarkdown'
-  | 'convertToSchedule'
-  | 'convertToChecklist';
+  | 'summarizeWhole'
+  | 'generateTitleFromContent'
+  | 'summarizeByHeading'
+  | 'organizeBullets'
+  | 'formatTables'
+  | 'improveCodeBlocks'
+  | 'dialectKansai'
+  | 'dialectInaka'
+  | 'makeQuiz';
 
 export interface AiTransformInput {
   provider: 'general' | 'chatgpt' | 'claudeCode' | 'copilot' | 'gemini';

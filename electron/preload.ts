@@ -434,12 +434,16 @@ contextBridge.exposeInMainWorld('api', {
       endpoint: string;
       model: string;
       action:
+        | 'convertHtmlToMarkdown'
+        | 'summarizeWhole'
+        | 'generateTitleFromContent'
         | 'summarizeByHeading'
         | 'organizeBullets'
-        | 'improveCodeBlocks'
         | 'formatTables'
-        | 'convertHtmlToMarkdown'
-        | 'convertToSchedule';
+        | 'improveCodeBlocks'
+        | 'dialectKansai'
+        | 'dialectInaka'
+        | 'makeQuiz';
       content: string;
     }): Promise<string> {
       return ipcRenderer.invoke('ai:transform', input);

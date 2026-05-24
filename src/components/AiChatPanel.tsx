@@ -45,6 +45,35 @@ interface Props {
    * 破壊的（結果が空 / ほぼ空）と判定された場合は呼ばれない。
    */
   onRewriteCurrentNote?: (newBody: string) => void;
+  /**
+   * 直前にこのノートで使っていたチャット状態。ノートを切り替えた時に
+   * App 側の Map から取り出して渡される。null/undefined ならまっさらな
+   * 状態で初期化する。
+   *
+   * ノートごとに独立したチャットを実現するために、App は本コンポーネントを
+   * `key={activeId}` で再マウントする。その上でこの props を初期化に使う。
+   */
+  initialState?: PersistedChatState;
+  /**
+   * 永続化対象の state が変わるたびに呼ばれる。App 側で
+   * `Map<noteId, PersistedChatState>` に保存し、ノート再選択時の復元に使う。
+   */
+  onStateChange?: (state: PersistedChatState) => void;
+}
+
+/**
+ * ノートごとに保存しておきたいチャット状態。busy / streaming など、
+ * セッション中だけ意味を持つ揮発状態は含まない。
+ */
+export interface PersistedChatState {
+  draft: string;
+  chatMode: 'chat' | 'edit';
+  messages: ChatMessage[];
+  attachments: AiChatAttachment[];
+  pendingNote: { title: string; folder: string } | null;
+  /** 入力履歴 (シェル風の ↑↓ ナビ) */
+  history: string[];
+  inputHeight: number;
 }
 
 // ===== AI ノート操作ディレクティブ =====
@@ -286,16 +315,24 @@ export default function AiChatPanel({
   onNoteCreated,
   onAppendToCurrentNote,
   onRewriteCurrentNote,
+  initialState,
+  onStateChange,
 }: Props) {
   const t = useT();
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState(initialState?.draft ?? '');
   // チャットモード: 普通の会話のみ。ノートには触らない。
   // 編集モード: AI に create_note / append_to_current_note / rewrite_current_note
   //   ディレクティブの出力を許可し、応答からパースして実行する。
-  const [chatMode, setChatMode] = useState<'chat' | 'edit'>('chat');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatMode, setChatMode] = useState<'chat' | 'edit'>(
+    initialState?.chatMode ?? 'chat',
+  );
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    initialState?.messages ?? [],
+  );
   const [busy, setBusy] = useState(false);
-  const [attachments, setAttachments] = useState<AiChatAttachment[]>([]);
+  const [attachments, setAttachments] = useState<AiChatAttachment[]>(
+    initialState?.attachments ?? [],
+  );
   const [isDragOver, setIsDragOver] = useState(false);
   // ノート化処理中フラグ（多重送信を防止）
   const [savingNote, setSavingNote] = useState(false);
@@ -311,7 +348,7 @@ export default function AiChatPanel({
   const [pendingNote, setPendingNote] = useState<{
     title: string;
     folder: string;
-  } | null>(null);
+  } | null>(initialState?.pendingNote ?? null);
   // 送信中の AI 要求 ID。停止ボタンから ai.abort(reqId) で中断するために保持。
   const inflightRequestIdRef = useRef<string | null>(null);
 
@@ -319,7 +356,7 @@ export default function AiChatPanel({
   // - historyRef: 送信済みの入力（chronological, 古い順）
   // - historyIndexRef: -1 = 通常編集中 / 0..len-1 = 履歴閲覧中の位置
   // - draftBufferRef: 履歴に入る直前の編集中テキストを保持し、↓ で抜けた時に復元
-  const historyRef = useRef<string[]>([]);
+  const historyRef = useRef<string[]>(initialState?.history ?? []);
   const historyIndexRef = useRef<number>(-1);
   const draftBufferRef = useRef<string>('');
   const HISTORY_MAX = 100;
@@ -370,7 +407,7 @@ export default function AiChatPanel({
   // 専用のつまみを配置。ドラッグ中は body にカーソル / select 無効化のクラスを付与。
   const INPUT_MIN_H = 64;
   const INPUT_MAX_H = 360;
-  const [inputHeight, setInputHeight] = useState(96);
+  const [inputHeight, setInputHeight] = useState(initialState?.inputHeight ?? 96);
   const resizeRef = useRef<{ startY: number; startH: number } | null>(null);
 
   const handleResizerMouseDown = (e: React.MouseEvent) => {
@@ -400,6 +437,31 @@ export default function AiChatPanel({
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   };
+
+  // ノートごとに独立したチャット状態を実現するため、App 側に Map で持って
+  // もらう。state が変わるたびに最新スナップショットを通知し、ノート切り替え
+  // (本コンポーネントの再マウント) や、後でピン留めタブを再選択した時の
+  // 復元に使う。history は ref で管理しているが、送信時に必ず messages も
+  // 更新されるので、その際に最新値ごと通知される。
+  useEffect(() => {
+    onStateChange?.({
+      draft,
+      chatMode,
+      messages,
+      attachments,
+      pendingNote,
+      history: historyRef.current.slice(),
+      inputHeight,
+    });
+  }, [
+    draft,
+    chatMode,
+    messages,
+    attachments,
+    pendingNote,
+    inputHeight,
+    onStateChange,
+  ]);
 
   // AI 応答の Markdown を HTML に変換するための markdown-it インスタンス。
   // - html: false で生 HTML を弾き、AI 出力に紛れ込んだスクリプト等の XSS を防止

@@ -2599,6 +2599,12 @@ body,
   color: inherit;
 }
 
+.ctx-menu__sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
 /* ---------- Main ---------- */
 .app__main {
   flex: 1;
@@ -4575,6 +4581,202 @@ body,
 
 .modal--rename {
   width: 440px;
+}
+
+/* ---------- AI 整形・要約 結果プレビューモーダル ---------- */
+.modal--ai-result {
+  width: min(720px, 90vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal--ai-result .modal__body {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ai-result-body {
+  gap: 12px;
+}
+
+.ai-result-body__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  flex-wrap: wrap;
+}
+
+.ai-result-body__meta-label {
+  font-weight: 600;
+}
+
+.ai-result-body__meta-value {
+  color: var(--fg);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 360px;
+}
+
+.ai-result-body__meta-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--accent-soft, rgba(120, 144, 200, 0.18));
+  color: var(--accent, #6878a8);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ai-result-body__toolbar {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.ai-result-body__tabs {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.ai-result-body__tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.ai-result-body__tab:hover {
+  background: var(--bg-elevated);
+  color: var(--fg);
+}
+
+.ai-result-body__tab.is-active {
+  background: var(--accent, #6878a8);
+  color: #fff;
+}
+
+.ai-result-body__content {
+  flex: 1;
+  min-height: 240px;
+  max-height: 56vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  padding: 16px 18px;
+}
+
+.ai-result-body__rendered {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--fg);
+}
+
+.ai-result-body__rendered :is(h1, h2, h3, h4, h5, h6) {
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+}
+
+.ai-result-body__rendered h1:first-child,
+.ai-result-body__rendered h2:first-child {
+  margin-top: 0;
+}
+
+.ai-result-body__rendered code {
+  background: var(--bg-elevated);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.ai-result-body__rendered pre {
+  background: var(--bg-elevated);
+  padding: 10px 12px;
+  border-radius: 6px;
+  overflow: auto;
+}
+
+.ai-result-body__rendered pre > code {
+  background: transparent;
+  padding: 0;
+}
+
+.ai-result-body__rendered table {
+  border-collapse: collapse;
+}
+
+.ai-result-body__rendered th,
+.ai-result-body__rendered td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+}
+
+.ai-result-body__raw {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ai-result-body__error {
+  border: 1px solid var(--danger, #d36d6d);
+  background: var(--danger-soft, rgba(211, 109, 109, 0.08));
+  border-radius: 8px;
+  padding: 14px 16px;
+  color: var(--fg);
+}
+
+.ai-result-body__error-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--danger, #d36d6d);
+}
+
+.ai-result-body__error-message {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.ai-result-body__title-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-result-body__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.ai-result-body__title-value {
+  font-size: 18px;
+  font-weight: 600;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
 }
 
 .rename-body {

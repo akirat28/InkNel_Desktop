@@ -174,6 +174,11 @@ export default function TabBar({
             onClick: () => onClose(targetId),
           },
           {
+            label: t.tabBar.closeToRight,
+            disabled: rightIds.length === 0,
+            onClick: () => onCloseMany(rightIds),
+          },
+          {
             label: t.tabBar.closeOthers,
             disabled: otherIds.length === 0,
             onClick: () => onCloseMany(otherIds),
@@ -182,13 +187,9 @@ export default function TabBar({
             label: t.tabBar.closeAll,
             onClick: () => onCloseMany([...openTabIds]),
           },
+          { separator: true },
           {
-            label: t.tabBar.closeToRight,
-            disabled: rightIds.length === 0,
-            onClick: () => onCloseMany(rightIds),
-          },
-          {
-            label: 'ノートの削除',
+            label: t.tabBar.deleteThis,
             danger: true,
             // クリック直後に確認モーダルを開く
             // (ContextMenu はクリックで自動的に閉じる)

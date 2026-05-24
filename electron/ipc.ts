@@ -137,14 +137,16 @@ type AiProvider =
   | 'copilot'
   | 'gemini';
 type AiAction =
-  | 'summarizeByHeading'
-  | 'generateTitleFromContent'
-  | 'organizeBullets'
-  | 'improveCodeBlocks'
-  | 'formatTables'
   | 'convertHtmlToMarkdown'
-  | 'convertToSchedule'
-  | 'convertToChecklist';
+  | 'summarizeWhole'
+  | 'generateTitleFromContent'
+  | 'summarizeByHeading'
+  | 'organizeBullets'
+  | 'formatTables'
+  | 'improveCodeBlocks'
+  | 'dialectKansai'
+  | 'dialectInaka'
+  | 'makeQuiz';
 
 interface AiTransformInput {
   provider: AiProvider;
@@ -219,41 +221,63 @@ function buildAiInstruction(action: AiAction): string {
       return `${common}\n表だけをMarkdownテーブルとして整形してください。列数、見出し、セル内容を読みやすくそろえ、表以外の本文は意味を変えず保持してください。`;
     case 'convertHtmlToMarkdown':
       return `${common}\n貼り付けられたHTMLを、構造を保持したままMarkdownへ変換してください。見出し、箇条書き、コードブロック、表、リンクを適切なMarkdownにしてください。`;
-    case 'convertToSchedule':
+    case 'summarizeWhole':
       return [
         common,
-        '入力のメモを「時間軸を中心としたスケジュール」として再構成してください。',
+        'ノートの本文全体を読み、要点を簡潔にまとめた要約を作成してください。',
         '出力は次の規約に従ってください:',
-        '- 全体のタイトルは `# スケジュール`。',
-        '- 日付ごとに `## YYYY-MM-DD（曜日）` の見出しを作成。日付が特定できる場合のみ。',
-        '  日付が不明・抽象的なときは `## 未定（手がかり: ...）` のように、推測の根拠を括弧書きで添える。',
-        '- 各日付の下に時刻順の表を 1 つ置く。列は `| 時刻 | 所要 | 内容 | 場所 | メモ |`。',
-        '  - 時刻は `HH:MM` または `HH:MM〜HH:MM` を優先。時刻不明は `(時刻未定)` と記す。',
-        '  - 所要時間が読み取れなければ `-` を入れる。',
-        '  - 場所・メモが無ければ `-`。',
-        '- 元メモの内容を改ざんしない。明記されていない時刻や日付を捏造しない。',
-        '  時刻が一切無い項目は表の下に `### 時刻未定のタスク` という小見出しで箇条書きとしてまとめる。',
-        '- 重複や曖昧な時刻表現は最も妥当な解釈で 1 つに統合し、迷う場合は注記する。',
-        '- 表より上に短い要約文や前置きは入れない（タイトル → 見出し → 表の順）。',
+        '- 出力は要約本文だけ。前置き・締めの文・コードフェンスでの全体囲みは入れない。',
+        '- 元ノートの主旨を保持し、書かれていない事項を捏造しない。',
+        '- 長さの目安は元の 20〜30% 程度。元が短い場合はそれに応じて短く。',
+        '- 要点を箇条書きで列挙する構成を基本とし、複数トピックがあれば見出しでセクション分けする。',
+        '- 数値・固有名詞・日付など事実情報は省略しない。',
       ].join('\n');
-    case 'convertToChecklist':
+    case 'dialectKansai':
+      // common (構造保持・捏造禁止) をそのまま使うと AI が「文体変換は情報の改変」と
+      // 解釈して原文をそのまま返すことがある。専用プロンプトで「文体は積極的に変える」
+      // ことを明示し、断り文や注釈を一切返さないよう強く指示する。
+      return [
+        'あなたは Markdown ノートの文体を関西弁 (大阪弁) に書き換える編集者です。',
+        '入力された Markdown 全体を、以下のルールで関西弁に翻訳して返してください。',
+        '出力規約:',
+        '- 出力は変換後の Markdown 本文だけ。前置き・後置きの説明文、',
+        '  「変換しました」「変換できません」等の断り文、コードフェンスでの全体囲みは付けない。',
+        '- 見出し (#)・箇条書き (- や 1.)・表・コードブロック・リンクといった Markdown 記法・構造は変えない。',
+        '- コードブロックの中身、URL、固有名詞、コマンド、英単語、数式は変換しない。',
+        '- それ以外の地の文・敬体・常体の本文はすべて自然な関西弁 (大阪弁ベース) に書き換える。',
+        '  例: 「〜です/ます」→「〜やで」「〜やねん」「〜やな」「〜してまうわ」、',
+        '  「〜ではない」→「〜ちゃう」、「とても」→「めっちゃ」、「だから」→「せやから」、',
+        '  「しなければならない」→「せなあかん」など。',
+        '- 事実関係・固有名詞・数値・順序は変えない。情報の追加・削除はしない。',
+        '- 必ず関西弁へ「変換した結果」だけを返す。拒否・説明・注釈は禁止。',
+      ].join('\n');
+    case 'dialectInaka':
+      return [
+        'あなたは Markdown ノートの文体を田舎っぽい素朴な言い回しに書き換える編集者です。',
+        '入力された Markdown 全体を、文末などに「ズラ」を散りばめた田舎言葉へ変換して返してください。',
+        '出力規約:',
+        '- 出力は変換後の Markdown 本文だけ。前置き・後置きの説明文、',
+        '  「変換しました」「変換できません」等の断り文、コードフェンスでの全体囲みは付けない。',
+        '- 見出し (#)・箇条書き (- や 1.)・表・コードブロック・リンクといった Markdown 記法・構造は変えない。',
+        '- コードブロックの中身、URL、固有名詞、コマンド、英単語、数式は変換しない。',
+        '- それ以外の地の文の文末などに自然な形で「〜ズラ」「〜だズラ」「〜するズラ」を挿入し、',
+        '  全体を古風で素朴な田舎っぽい語り口に書き換える。',
+        '- すべての文末を機械的に置き換えるのではなく、読みづらくならない範囲で散らす。',
+        '- 事実関係・固有名詞・数値・順序は変えない。情報の追加・削除はしない。',
+        '- 必ず変換後の結果だけを返す。拒否・説明・注釈は禁止。',
+      ].join('\n');
+    case 'makeQuiz':
       return [
         common,
-        '入力のメモから「作業項目のチェックリスト」を作成してください。',
+        'ノートを理解して、理解ができているかを確認する質問文を作成してください。',
         '出力は次の規約に従ってください:',
-        '- 全体のタイトルは `# チェックリスト`。',
-        '- 元メモから「やること / 作業 / TODO」と読み取れる項目をすべて抽出し、',
-        '  Markdown のタスクリスト形式 `- [ ] 項目名` で列挙する。',
-        '  既に「完了」「済」「done」などの言及がある項目は `- [x] 項目名` とする。',
-        '- 大分類（手順のフェーズ、対象システム、担当者など）が読み取れる場合は',
-        '  `## 分類名` の見出しでセクション分けする。分類が読み取れない場合は',
-        '  すべての項目を `# チェックリスト` 直下の単一リストにする。',
-        '- 各項目は **動詞で始まる短い 1 行** に整える（例: 「資料を確認する」）。',
-        '  元メモが体言止めや単語のみの場合は、もっとも自然な動作表現に置き換える。',
-        '- 元メモに無い項目は捏造しない。曖昧でタスク化できない記述は採用しない。',
-        '- 補足が必要な項目は、その項目の直後に `  - 備考: ...` のサブ箇条書きで',
-        '  1〜2 行だけ添える。冗長な解説は禁止。',
-        '- タイトル → 見出し → タスクリスト の順以外の要素（前置き・締めの文）は出力しない。',
+        '- 元のノート本文はそのまま冒頭から保持する。改変・削除・要約はしない。',
+        '- 本文の末尾に `## 問題` という見出しを 1 つ追加する。',
+        '- その下に質問を `1.` から始まる番号付きリストで並べる。',
+        '- 問題数はノートの文章量・トピック数に応じて調整する',
+        '  (短いノートは 2〜3 問、中程度は 4〜6 問、長いノートは 7〜10 問を目安)。',
+        '- 各設問は本文中に答えの根拠がある内容に限る。本文に無い知識を問わない。',
+        '- 解答は出力しない。問題文のみ列挙する。',
       ].join('\n');
   }
 }
@@ -280,7 +304,64 @@ function defaultAiModel(provider: AiProvider): string {
 function cleanAiOutput(text: string): string {
   return text
     .replace(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```$/i, '$1')
+    // buildAiUserMessage で挿入する区切りタグを AI が稀にそのまま出力するケースの保険
+    .replace(/<<<\/?(?:INKNEL_CONTENT|END_INKNEL_CONTENT)>>>/g, '')
     .trim();
+}
+
+/**
+ * action ごとの sampling temperature。
+ * 整形系 (構造保持・要約) は決定的にしたいので低め、文体変換系は揺らぎが
+ * 必要なので少し高めにする。低すぎると AI が「文体を変えるのは情報改変」と
+ * 判断して原文をほぼそのまま返す挙動が出る。
+ */
+function aiTemperatureFor(action: AiAction): number {
+  if (action === 'dialectKansai' || action === 'dialectInaka') return 0.7;
+  if (action === 'makeQuiz') return 0.5;
+  return 0.2;
+}
+
+/**
+ * AI への user メッセージを組み立てる。system プロンプトだけだと、GPT-4o-mini
+ * など軽量モデルが文体変換指示を「文字どおりに従わず」原文を返すことが多い。
+ * user 側にも明示的な指示を付与して、二重に押し込む。
+ *
+ * 区切りは三連バッククォートで囲み、AI に「ここからここまでが書き換え対象」
+ * と分かるようにする。ノート本文内に裸の ``` があっても囲みが壊れないよう、
+ * カスタム区切りタグを使う。
+ */
+function buildAiUserMessage(action: AiAction, content: string): string {
+  const wrap = (instruction: string): string =>
+    [
+      instruction,
+      '',
+      '対象テキスト (この区切りの中身だけを書き換える):',
+      '<<<INKNEL_CONTENT>>>',
+      content,
+      '<<<END_INKNEL_CONTENT>>>',
+      '',
+      '注意: 出力は書き換え後のテキストだけ。前置き・断り文・区切りタグ自体は出力しない。',
+    ].join('\n');
+  switch (action) {
+    case 'dialectKansai':
+      return wrap(
+        'アクティブなノートのテキスト全体を関西弁 (大阪弁) に書き換えてください。Markdown 記法・見出し・箇条書き・表・コードブロックの構造は変えず、文体だけ関西弁に変えてください。コード・URL・固有名詞は変えないでください。',
+      );
+    case 'dialectInaka':
+      return wrap(
+        '次のテキスト全体に「ズラ」をつけて田舎っぽい文章に書き換えてください。Markdown 記法・見出し・箇条書き・表・コードブロックの構造は変えず、地の文の文末などに自然な形で「〜ズラ」「〜だズラ」を散らしてください。コード・URL・固有名詞は変えないでください。',
+      );
+    case 'makeQuiz':
+      return wrap(
+        '次のテキストを読み、理解度を確認する質問文を作って、テキスト末尾に `## 問題` 見出しを追加してその下に番号付きで列挙してください。元の本文は冒頭からそのまま残す。質問数は文章量に応じて 2〜10 問。',
+      );
+    case 'summarizeWhole':
+      return wrap('次のテキストを箇条書き中心に要約してください。');
+    default:
+      // 整形系 (Markdown 変換・タイトル生成・見出し要約・箇条書き整理・表・コード) は
+      // system プロンプトだけで十分に動くため、user は本文をそのまま渡す。
+      return content;
+  }
 }
 
 async function callOpenAiCompatible(
@@ -298,10 +379,10 @@ async function callOpenAiCompatible(
     },
     body: JSON.stringify({
       model,
-      temperature: 0.2,
+      temperature: aiTemperatureFor(input.action),
       messages: [
         { role: 'system', content: buildAiInstruction(input.action) },
-        { role: 'user', content: input.content },
+        { role: 'user', content: buildAiUserMessage(input.action, input.content) },
       ],
     }),
   });
@@ -335,9 +416,14 @@ async function callAnthropic(
     body: JSON.stringify({
       model,
       max_tokens: 8192,
-      temperature: 0.2,
+      temperature: aiTemperatureFor(input.action),
       system: buildAiInstruction(input.action),
-      messages: [{ role: 'user', content: input.content }],
+      messages: [
+        {
+          role: 'user',
+          content: buildAiUserMessage(input.action, input.content),
+        },
+      ],
     }),
   });
   const json = await res.json().catch(() => null);
@@ -381,10 +467,12 @@ async function callGeminiNative(
       contents: [
         {
           role: 'user',
-          parts: [{ text: input.content }],
+          parts: [
+            { text: buildAiUserMessage(input.action, input.content) },
+          ],
         },
       ],
-      generationConfig: { temperature: 0.2 },
+      generationConfig: { temperature: aiTemperatureFor(input.action) },
     }),
   });
   const json = await res.json().catch(() => null);

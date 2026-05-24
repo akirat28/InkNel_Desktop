@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-export interface ContextMenuItem {
+export interface ContextMenuActionItem {
   label: string;
   onClick: () => void;
   /** 左側に表示するアイコン（SVG など） */
@@ -10,7 +10,15 @@ export interface ContextMenuItem {
   danger?: boolean;
   /** 無効化されたアイテムはクリック不可・グレーアウト */
   disabled?: boolean;
+  separator?: false;
 }
+
+/** 項目間に挟む区切り線 */
+export interface ContextMenuSeparator {
+  separator: true;
+}
+
+export type ContextMenuItem = ContextMenuActionItem | ContextMenuSeparator;
 
 interface Props {
   /** 表示位置（ビューポート座標） */
@@ -55,23 +63,28 @@ export default function ContextMenu({ x, y, items, onClose }: Props) {
       style={{ left: x, top: y }}
       role="menu"
     >
-      {items.map((item, idx) => (
-        <button
-          key={idx}
-          type="button"
-          role="menuitem"
-          disabled={item.disabled}
-          className={`ctx-menu__item ${item.danger ? 'is-danger' : ''} ${item.disabled ? 'is-disabled' : ''}`}
-          onClick={() => {
-            if (item.disabled) return;
-            item.onClick();
-            onClose();
-          }}
-        >
-          {item.icon && <span className="ctx-menu__icon">{item.icon}</span>}
-          <span className="ctx-menu__label">{item.label}</span>
-        </button>
-      ))}
+      {items.map((item, idx) => {
+        if (item.separator) {
+          return <div key={idx} className="ctx-menu__sep" role="separator" />;
+        }
+        return (
+          <button
+            key={idx}
+            type="button"
+            role="menuitem"
+            disabled={item.disabled}
+            className={`ctx-menu__item ${item.danger ? 'is-danger' : ''} ${item.disabled ? 'is-disabled' : ''}`}
+            onClick={() => {
+              if (item.disabled) return;
+              item.onClick();
+              onClose();
+            }}
+          >
+            {item.icon && <span className="ctx-menu__icon">{item.icon}</span>}
+            <span className="ctx-menu__label">{item.label}</span>
+          </button>
+        );
+      })}
     </div>,
     document.body,
   );

@@ -7,3 +7,6 @@ release/
 .env
 plugin-dev/downloads/
 plugin-dev/download/
+
+# 実 AI を呼ぶローカル検証スクリプト (DB から API キーを読むので公開リポジトリには上げない)
+scripts/test-dialect-kansai.cjs
