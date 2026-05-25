@@ -848,7 +848,9 @@ function parseEnabledPlugins(
 
 /**
  * カレンダープラグイン設定 JSON をパース。
- * folder は前後空白除去 + 空なら既定値、titleFormat は許可リスト内のみ受理。
+ * folder は前後空白を除去するが「空文字も有効値」として受理する
+ * (= ルート直下にカレンダーノートを作成したい場合に使う)。
+ * titleFormat は許可リスト内のみ受理。
  */
 function parseCalendarPluginSettings(
   v: string | undefined,
@@ -859,10 +861,11 @@ function parseCalendarPluginSettings(
     const obj = JSON.parse(v);
     if (!obj || typeof obj !== 'object') return fallback;
     const o = obj as Record<string, unknown>;
+    // 空文字 '' はユーザーが意図的に「フォルダ無し (ルート)」を選んだ状態として
+    // 保持する。fallback に巻き戻すと、空欄にした瞬間に「カレンダー」が
+    // 復活してしまい設定 UI が使いづらくなる。
     const folder =
-      typeof o.folder === 'string' && o.folder.trim()
-        ? o.folder.trim()
-        : fallback.folder;
+      typeof o.folder === 'string' ? o.folder.trim() : fallback.folder;
     const titleFormat =
       typeof o.titleFormat === 'string' &&
       CALENDAR_TITLE_FORMAT_OPTIONS.some((opt) => opt.value === o.titleFormat)

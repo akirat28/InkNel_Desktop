@@ -44,7 +44,9 @@ export function computeNotePathForDate(
   baseFolder: string,
   titleFormat: string,
 ): { folder: string; title: string } {
-  const folderBase = (baseFolder || '').trim() || 'カレンダー';
+  // baseFolder は空文字 ('') もそのまま受け入れる (= ルート直下にカレンダーノート)。
+  // 設定 UI で「ノートフォルダ名」を空にした場合の意図を尊重する。
+  const folderBase = (baseFolder || '').trim();
   const formatted = formatDate(date, titleFormat);
   const segments = formatted
     .split('/')
@@ -52,7 +54,10 @@ export function computeNotePathForDate(
     .filter(Boolean);
   if (segments.length >= 2) {
     const title = segments[segments.length - 1];
-    const folder = [folderBase, ...segments.slice(0, -1)].join('/');
+    // folderBase が空のときに先頭スラッシュが入らないよう filter する
+    const folder = [folderBase, ...segments.slice(0, -1)]
+      .filter(Boolean)
+      .join('/');
     return { folder, title };
   }
   return { folder: folderBase, title: formatted };

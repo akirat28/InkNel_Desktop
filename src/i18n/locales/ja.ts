@@ -33,6 +33,7 @@ const ja: Locale = {
     calendar: 'カレンダー',
     sync: '同期',
     syncStorage: '保存先と同期',
+    syncing: '同期中',
     aiChat: 'AI チャット',
     settings: '設定',
     barLabel: 'アクティビティバー',
@@ -443,19 +444,17 @@ const ja: Locale = {
       failed: 'リストアに失敗しました',
     },
     reset: {
-      title: '初期化',
-      bannerTitle: 'アプリを完全に初期化します',
+      title: 'DB の初期化',
+      bannerTitle: 'DB のノート・フォルダを削除します',
       bannerDesc:
-        'DB に登録されているノート・フォルダ・設定が削除され、アプリが再起動します。実行前に重要なノートがあればエクスポート / 同期しておくことを推奨します。',
+        'DB に登録されているノートとフォルダが削除され、アプリが再起動します。設定 (保存先パス・AI トークン・テーマ等) と保存先フォルダの .md / 画像 / 添付ファイルは残ります。',
       willBeDeleted: '削除されるもの',
       willRemain: '残るもの',
       delDbNotes: 'ノート一覧（DB）',
-      delFolders: 'フォルダ構造',
-      delAppSettings: 'アプリ設定（テーマ・保存先など）',
-      delTabState: 'タブ復元情報',
+      delFolders: 'フォルダ構造（DB）',
       keepMdFiles: '保存先フォルダの .md ファイル',
       keepMedia: '画像・添付ファイル',
-      keepOtherDevices: '他デバイスの同期データ',
+      keepAppSettings: 'アプリ設定（保存先・AI トークン・テーマなど）',
       keepPlugins: 'ダウンロードしたプラグイン',
       confirmHeading: '確認',
       confirmInstructions:
@@ -466,7 +465,7 @@ const ja: Locale = {
       executeBtn: '初期化を実行',
       executingBtn: '初期化中…',
       confirmDialog:
-        '本当に初期化しますか？\n\nDB（ノート一覧・フォルダ・設定）が削除され、アプリが再起動します。\n\n保存先フォルダの .md ファイル等は残るので、再起動後に「同期」で取り込み直すことができます。',
+        '本当に DB を初期化しますか？\n\nDB のノートとフォルダが削除され、アプリが再起動します。\n\n設定 (保存先・AI トークン等) と保存先フォルダの .md / 画像 / 添付は残るので、再起動後に「同期」で取り込み直せます。',
       failed: '初期化に失敗しました',
     },
     about: {

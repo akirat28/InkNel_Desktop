@@ -2316,7 +2316,7 @@ function CalendarPanel({ settings, onChange }: PanelProps) {
           </label>
           <p className="prefs__field-desc">
             カレンダーから作成したノートを保存するフォルダ名。既定:
-            「カレンダー」。
+            「カレンダー」。空欄ならルート直下に作成します。
           </p>
         </div>
         <input
@@ -4167,18 +4167,6 @@ function ResetPanel() {
               </span>
               {t.settings.reset.delFolders}
             </li>
-            <li className="reset-panel__list-item">
-              <span className="reset-panel__list-icon reset-panel__list-icon--del">
-                <CrossSmallIcon />
-              </span>
-              {t.settings.reset.delAppSettings}
-            </li>
-            <li className="reset-panel__list-item">
-              <span className="reset-panel__list-icon reset-panel__list-icon--del">
-                <CrossSmallIcon />
-              </span>
-              {t.settings.reset.delTabState}
-            </li>
           </ul>
         </div>
 
@@ -4204,7 +4192,7 @@ function ResetPanel() {
               <span className="reset-panel__list-icon reset-panel__list-icon--keep">
                 <CheckIcon />
               </span>
-              {t.settings.reset.keepOtherDevices}
+              {t.settings.reset.keepAppSettings}
             </li>
             <li className="reset-panel__list-item">
               <span className="reset-panel__list-icon reset-panel__list-icon--keep">

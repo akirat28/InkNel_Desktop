@@ -1757,39 +1757,28 @@ export function registerIpc(): void {
    * 実際の設定保存は呼び出し元（renderer）の `settings.set('storage.path', ...)` で行う。
    */
   /**
-   * アプリの DB 初期化:
-   * 1. DB のテーブルを TRUNCATE（notes / folders / settings 全消去）
-   * 2. SQLite を閉じて DB ファイルと WAL を削除
+   * アプリの DB 初期化 (ノート・フォルダのデータのみ削除):
+   * 1. notes / folders テーブルだけ TRUNCATE
+   * 2. WAL チェックポイント + VACUUM で DB ファイルを縮約
    * 3. アプリを再起動
    *
-   * 注: **保存先フォルダの `.md` / 画像 / 添付も削除する**。
-   * 共有ストレージを利用している場合は他デバイスにも影響が及ぶ点に注意。
+   * **残るもの**:
+   *  - 保存先フォルダの `.md` / 画像 / 添付ファイル
+   *    (共有ストレージ上のファイルを誤って削除しないため。再構築は
+   *     「保存先と同期」もしくは「.md から DB を再構築」で行える)
+   *  - settings テーブル (保存先パス・AI トークン・UI 設定など)
+   *  - DB ファイル自体 (settings を保持するため物理削除はしない)
    *
    * 呼び出し前に renderer 側で確認 UI を出すこと（テキスト入力 "初期化" で確定）。
    */
   ipcMain.handle('app:reset-all', async (): Promise<void> => {
-    // (1) 保存先フォルダの notes/ images/ attachments/ を削除。
-    //   先に取得してから DB を壊すのは、storage.path 設定を消す前にパスを
-    //   解決する必要があるため。
-    const storageRoot = getStorageRoot();
-    for (const sub of ['notes', 'images', 'attachments']) {
-      const target = join(storageRoot, sub);
-      try {
-        if (existsSync(target)) {
-          rmSync(target, { recursive: true, force: true });
-        }
-      } catch (err) {
-        console.warn('[app:reset-all] removing', target, 'failed:', err);
-      }
-    }
-
-    // (2) テーブルを空にする（ファイル削除に失敗してもデータは消える）
+    // notes / folders だけを空にする。settings (ユーザー設定) と
+    // 保存先のファイル群 (.md / 画像 / 添付) は意図的に残す。
     try {
       const db = initDb();
       const tx = db.transaction(() => {
         db.exec('DELETE FROM notes');
         db.exec('DELETE FROM folders');
-        db.exec('DELETE FROM settings');
       });
       tx();
       // WAL の内容も DB ファイルへ反映してから縮約
@@ -1807,25 +1796,7 @@ export function registerIpc(): void {
       console.warn('[app:reset-all] truncate failed:', err);
     }
 
-    // (3) SQLite を閉じる
-    try {
-      closeDb();
-    } catch {
-      /* 既に閉じていれば無視 */
-    }
-
-    // (4) DB ファイル一式を削除（WAL / shm 含む）。OS が file lock 中なら
-    // unlinkSync が失敗するが、(2) で TRUNCATE 済みなのでデータ消去は確定。
-    const userData = app.getPath('userData');
-    for (const f of ['inknel.db', 'inknel.db-wal', 'inknel.db-shm']) {
-      try {
-        unlinkSync(join(userData, f));
-      } catch {
-        /* 無くても OK */
-      }
-    }
-
-    // (5) 再起動
+    // 再起動 (DB の状態をクリーンに反映するため)
     app.relaunch();
     app.exit(0);
   });

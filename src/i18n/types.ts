@@ -47,6 +47,7 @@ export interface Locale {
     calendar: string;
     sync: string;
     syncStorage: string; // 「保存先と同期」
+    syncing: string; // 「同期中」(ホバーラベル用、例: 「保存先 (同期中 45%)」)
     aiChat: string;
     settings: string;
     barLabel: string; // nav の aria-label
@@ -429,11 +430,9 @@ export interface Locale {
       willRemain: string;
       delDbNotes: string;
       delFolders: string;
-      delAppSettings: string;
-      delTabState: string;
       keepMdFiles: string;
       keepMedia: string;
-      keepOtherDevices: string;
+      keepAppSettings: string;
       keepPlugins: string;
       confirmHeading: string;
       confirmInstructions: string;

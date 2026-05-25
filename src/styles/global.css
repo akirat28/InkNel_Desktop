@@ -252,6 +252,49 @@ body,
   transform-origin: center center;
 }
 
+/* ---------- アクティビティバー保存先アイコン: 進捗リング ---------- */
+/* IconButton の周りに薄い円 + アクセント色の円弧で進捗 % を可視化。
+   App.tsx 側で sharing 中だけ 0-100 を渡し、完了 600ms 後に null へ戻す。 */
+.activity__ring {
+  position: absolute;
+  /* IconButton (48x44) の中央にアイコンが置かれる前提で SVG 32x32 を重ねる */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  overflow: visible;
+  /* 開閉時のフェード */
+  animation: activity-ring-in 200ms ease-out;
+}
+
+.activity__ring-track {
+  stroke: var(--border, rgba(120, 120, 130, 0.25));
+  stroke-width: 2;
+  opacity: 0.5;
+}
+
+.activity__ring-fill {
+  stroke: var(--accent, #6878a8);
+  stroke-width: 2;
+  stroke-linecap: round;
+  /* 進捗値が変わるたびに滑らかに伸びる */
+  transition: stroke-dashoffset 250ms ease-out;
+}
+
+/* アイコン本体は SVG ring と重ねるため z 順を整える */
+.activity__btn-inner {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes activity-ring-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 @keyframes activity-share-spin {
   from {
     transform: rotate(0deg);

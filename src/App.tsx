@@ -2556,6 +2556,67 @@ export default function App() {
     return unsubscribe;
   }, []);
 
+  // ----- アクティビティバー保存先アイコンの進捗リング表示 -----
+  // ShareSyncProgress を 0-100% に変換。フェーズ重み:
+  //   ノート段階 (push/pull/skip): 0 → 70%
+  //   メディア (images):           70 → 80%
+  //   メディア (attachments):      80 → 90%
+  //   仕上げ (finalizing):         95%
+  //   完了 (done):                 100%
+  const syncProgressToRingPercent = useCallback(
+    (p: import('./global').ShareSyncProgress | null): number | null => {
+      if (!p) return null;
+      switch (p.phase) {
+        case 'start':
+          return 0;
+        case 'push':
+        case 'pull':
+        case 'skip': {
+          if (p.total <= 0) return 0;
+          return Math.min(70, (p.current / p.total) * 70);
+        }
+        case 'media': {
+          // p.total はメディア全体件数, pushed/pulled の合計が完了数
+          const base = p.kind === 'images' ? 70 : 80;
+          const span = 10;
+          if (p.total <= 0) return base + span;
+          const done = (p.pushed ?? 0) + (p.pulled ?? 0);
+          return base + Math.min(span, (done / p.total) * span);
+        }
+        case 'finalizing':
+          return 95;
+        case 'done':
+          return 100;
+      }
+    },
+    [],
+  );
+
+  // リング表示用の % 値。null = リング非表示 (アイドル)。
+  // sharing 中は progress イベントを反映、sharing 終了直後は 100% を 600ms 保持してから null へ。
+  const [syncRingPercent, setSyncRingPercent] = useState<number | null>(null);
+
+  // sharing 中: 進捗イベントが来るたびに % を更新
+  useEffect(() => {
+    if (!sharing) return;
+    const pct = syncProgressToRingPercent(syncProgress);
+    if (pct !== null) setSyncRingPercent(pct);
+  }, [sharing, syncProgress, syncProgressToRingPercent]);
+
+  // sharing → false になった瞬間: 100% を見せて 600ms 後に消す
+  const wasSharingRef = useRef(false);
+  useEffect(() => {
+    if (sharing) {
+      wasSharingRef.current = true;
+      return;
+    }
+    if (!wasSharingRef.current) return;
+    wasSharingRef.current = false;
+    setSyncRingPercent(100);
+    const t = setTimeout(() => setSyncRingPercent(null), 600);
+    return () => clearTimeout(t);
+  }, [sharing]);
+
   const handleStartSync = async (): Promise<void> => {
     if (settings.shareProvider === 'none' || sharing) return;
     setSharing(true);
@@ -3202,6 +3263,7 @@ export default function App() {
           onOpenSettings={() => void window.api.openPreferencesWindow()}
           onSelectStorage={handleSelectStorage}
           sharing={sharing}
+          syncProgressPercent={syncRingPercent}
         />
         <div className="app__body">
         <Sidebar

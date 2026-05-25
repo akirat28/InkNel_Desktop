@@ -334,6 +334,33 @@ function ensureStyle() {
 function renderMindmapBlock(blockEl, blockIndex, ctx, rootEl) {
   ensureStyle();
 
+  // ----- 状態を WeakMap (preview root + blockIndex) から取り出す -----
+  // Preview は本文変更時に dangerouslySetInnerHTML で全 DOM を入れ替えるため、
+  // .mindmap-block 要素自体は毎回新しいものになる。state を blockEl ではなく
+  // root + blockIndex の組で持つことで、本文編集 (= commit() → setBody()) を
+  // またいでも pan / scale / 高さ・AbortController 等の状態を引き継げる。
+  const state = getBlockState(rootEl, blockIndex);
+
+  // ----- window レベルのリスナー累積を防ぐ -----
+  // commit() → setBody() → Preview 再走 → resetInPreview + renderInPreview が
+  // 連続するたびに、新しい renderMindmapBlock 呼び出しが window.addEventListener
+  // ('mousemove'/'mouseup', ...) を追加する。cleanup しないと過去の closure
+  // (古い tree / canvas 参照) を握ったハンドラが大量に残り、ドラッグ時に古い
+  // tree から commit() が走って最新の編集を上書きしてしまう (= マインドマップが
+  // 壊れる現象の主因)。
+  // AbortController を state に保存することで、blockEl が DOM 再生成されても
+  // 同 root + 同 blockIndex の前回 listener を確実に abort できる。
+  if (state.abort) {
+    try {
+      state.abort.abort();
+    } catch {
+      /* 既に abort 済みなら無視 */
+    }
+  }
+  const __mindmapAbort = new AbortController();
+  state.abort = __mindmapAbort;
+  const __listenerOpts = { signal: __mindmapAbort.signal };
+
   // 初回ソースを data 属性から取得
   const source = decodeURIComponent(
     blockEl.getAttribute('data-mindmap-source') ?? '',
@@ -361,9 +388,6 @@ function renderMindmapBlock(blockEl, blockIndex, ctx, rootEl) {
       state.initialized = true;
     }
   }
-  // 状態を WeakMap (preview root を key) から取り出す。Preview の本文編集で
-  // .mindmap-block 自体が DOM 再生成されてもここの値は引き継がれる。
-  const state = getBlockState(rootEl, blockIndex);
   let scale = state.scale;
   // 平行移動オフセット (translate)。scroll ではなく transform で管理し、
   // 中身のサイズに関係なく自由にパンできるようにする。
@@ -827,7 +851,7 @@ function renderMindmapBlock(blockEl, blockIndex, ctx, rootEl) {
       const targetEl = findNodeElAt(e.clientX, e.clientY);
       updateDropTarget(targetEl);
     }
-  });
+  }, __listenerOpts);
 
   window.addEventListener('mouseup', () => {
     if (resizeState) {
@@ -906,7 +930,7 @@ function renderMindmapBlock(blockEl, blockIndex, ctx, rootEl) {
         }
       }
     }
-  });
+  }, __listenerOpts);
 
   /* Delete/Backspace でも削除可 (フォーカス中のみ、read-only 時は無視) */
   blockEl.addEventListener('keydown', (e) => {
@@ -974,6 +998,10 @@ export const renderInPreview = (root, ctx) => {
 };
 
 export const resetInPreview = (root) => {
+  // 注: window レベルの mousemove/mouseup リスナーの cleanup は
+  // renderMindmapBlock 冒頭で root+blockIndex 連動の state.abort 経由で行う
+  // (blockEl は dangerouslySetInnerHTML で再生成されるため、ここで el に
+  // 紐づけて abort することはできない)。
   root
     .querySelectorAll('.mindmap-block[data-mindmap-rendered]')
     .forEach((el) => {

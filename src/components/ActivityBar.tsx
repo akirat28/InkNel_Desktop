@@ -32,6 +32,12 @@ interface Props {
   onSelectStorage: () => void;
   /** 同期中ローディング表示 */
   sharing: boolean;
+  /**
+   * クラウド同期の進捗 %。null/undefined ならリング非表示。
+   * 0-100 のとき保存先アイコンの外周にプログレスリングを描画する。
+   * 進捗反映と完了後の保持・フェードアウトは App.tsx 側で管理する。
+   */
+  syncProgressPercent?: number | null;
 }
 
 interface IconButtonProps {
@@ -39,9 +45,31 @@ interface IconButtonProps {
   label: string;
   onClick: () => void;
   children: React.ReactNode;
+  /**
+   * 円形プログレスリングをアイコンの外周に描画する。
+   * - null/undefined: リング非表示 (アイドル)
+   * - 0..100: その % だけ円弧を埋める
+   * クラウド同期の進捗表示に使う (保存先アイコン専用想定)。
+   */
+  progressPercent?: number | null;
 }
 
-function IconButton({ active, label, onClick, children }: IconButtonProps) {
+function IconButton({
+  active,
+  label,
+  onClick,
+  children,
+  progressPercent,
+}: IconButtonProps) {
+  const showRing =
+    typeof progressPercent === 'number' && Number.isFinite(progressPercent);
+  // SVG 円弧: viewBox 32, radius 14 (= 直径 28 でアイコン 22px 周りに少しだけ余白)
+  const radius = 14;
+  const circumference = 2 * Math.PI * radius;
+  const pct = showRing
+    ? Math.max(0, Math.min(100, progressPercent as number))
+    : 0;
+  const dashOffset = circumference * (1 - pct / 100);
   return (
     <button
       type="button"
@@ -51,7 +79,40 @@ function IconButton({ active, label, onClick, children }: IconButtonProps) {
       aria-label={label}
       aria-pressed={active}
     >
-      {children}
+      {showRing && (
+        <svg
+          className="activity__ring"
+          viewBox="0 0 32 32"
+          width="32"
+          height="32"
+          aria-hidden="true"
+        >
+          {/* 背景の薄い円 (どの程度進んでいるか直感的に見せるための土台) */}
+          <circle
+            cx="16"
+            cy="16"
+            r={radius}
+            fill="none"
+            className="activity__ring-track"
+          />
+          {/* 進捗部分。 -90deg 回転で 12 時方向から時計回りに伸びる。 */}
+          <circle
+            cx="16"
+            cy="16"
+            r={radius}
+            fill="none"
+            className="activity__ring-fill"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            transform="rotate(-90 16 16)"
+            role="progressbar"
+            aria-valuenow={Math.round(pct)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          />
+        </svg>
+      )}
+      <span className="activity__btn-inner">{children}</span>
     </button>
   );
 }
@@ -70,6 +131,7 @@ export default function ActivityBar({
   onOpenSettings,
   onSelectStorage,
   sharing,
+  syncProgressPercent,
 }: Props) {
   const t = useT();
   const filesActive = sidebarMode === 'files';
@@ -159,11 +221,19 @@ export default function ActivityBar({
       </div>
       <div className="activity__group activity__group--bottom">
         <IconButton
-          label={t.activity.syncStorage}
+          // 同期中はラベルを「保存先 (同期中 XX%)」に動的更新し、ホバーで
+          // 進捗を読み取れるようにする (aria-label にもこの文字列が反映される)
+          label={
+            typeof syncProgressPercent === 'number'
+              ? `${t.activity.syncStorage} (${t.activity.syncing} ${Math.round(syncProgressPercent)}%)`
+              : t.activity.syncStorage
+          }
           active={syncActive}
           onClick={onSelectStorage}
+          progressPercent={syncProgressPercent ?? null}
         >
-          <HddIcon spinning={sharing} />
+          {/* 進捗リング導入後はアイコンのスピンは廃止。状態は外周リングで表現する。 */}
+          <HddIcon spinning={false} />
         </IconButton>
         <IconButton label={t.activity.settings} onClick={onOpenSettings}>
           <SettingsIcon />
