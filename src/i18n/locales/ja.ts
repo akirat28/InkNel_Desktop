@@ -246,6 +246,25 @@ const ja: Locale = {
       editorMinimap: 'エディタのミニマップ',
       editorMinimapDesc:
         'エディタ右側に本文を縮小したミニマップを表示します。クリックで該当位置までスクロールします。',
+      editorActiveLineUnderline: '編集中の行にアンダーライン',
+      editorActiveLineUnderlineDesc:
+        'エディタでカーソルがある行の下端に細い下線を引いて、現在編集中の位置を目立たせます。',
+      editorActiveLineUnderlineColor: 'アンダーラインの色',
+      editorActiveLineUnderlineColorDesc:
+        'アンダーラインの色を変更できます。「既定に戻す」でアクセントカラー (テーマ追従) に戻ります。',
+      editorActiveLineUnderlineColorReset: '既定に戻す',
+      editorHighlightActiveLineGutter: '行番号側もアクティブ行を強調',
+      editorHighlightActiveLineGutterDesc:
+        '左端の行番号領域も、カーソルがある行を背景色で強調します。',
+      editorBracketMatching: '対になる括弧をハイライト',
+      editorBracketMatchingDesc:
+        'カーソル位置のかっこ ((), [], {}, <>) の対をハイライトして対応を視認しやすくします。',
+      editorCloseBrackets: '括弧の自動補完',
+      editorCloseBracketsDesc:
+        '「(」「[」「"」などを入力すると対の閉じ括弧が自動的に挿入されます。範囲選択中に入力すると、選択範囲をその括弧で囲みます。',
+      editorTabSize: 'Tab 幅',
+      editorTabSizeDesc:
+        'タブ文字 1 つを半角何文字分として表示するか。コードブロック内のインデント幅もこの値に追従します。',
       historyMode: '検索履歴の保存',
       historyModeDesc:
         '検索キーワードの履歴をアプリ再起動後も残すかを選択します。',

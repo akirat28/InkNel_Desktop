@@ -244,6 +244,25 @@ const en: Locale = {
       editorMinimap: 'Editor minimap',
       editorMinimapDesc:
         'Show a scaled-down minimap of the document on the right side of the editor. Click anywhere on it to scroll there.',
+      editorActiveLineUnderline: 'Underline active editor line',
+      editorActiveLineUnderlineDesc:
+        'Draw a thin underline below the line where the cursor is, to make the current editing position stand out.',
+      editorActiveLineUnderlineColor: 'Underline color',
+      editorActiveLineUnderlineColorDesc:
+        'Customize the underline color. "Reset" falls back to the accent color (follows the theme).',
+      editorActiveLineUnderlineColorReset: 'Reset',
+      editorHighlightActiveLineGutter: 'Highlight active line in gutter',
+      editorHighlightActiveLineGutterDesc:
+        'Also highlight the active line in the gutter (line number column) on the left.',
+      editorBracketMatching: 'Highlight matching brackets',
+      editorBracketMatchingDesc:
+        'Highlight the matching pair for (), [], {}, <> at the cursor position so you can see the pairing.',
+      editorCloseBrackets: 'Auto-close brackets',
+      editorCloseBracketsDesc:
+        'Typing "(", "[", or """ inserts the matching closing bracket automatically. With text selected, it wraps the selection.',
+      editorTabSize: 'Tab width',
+      editorTabSizeDesc:
+        'How many half-width characters a tab renders as. The indent width inside code blocks follows this value too.',
       historyMode: 'Search history',
       historyModeDesc:
         'Whether the search keyword history persists across app restarts.',

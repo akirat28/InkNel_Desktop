@@ -193,12 +193,32 @@ interface ChatMessage {
 interface AiChatAttachment {
   id: string;
   name: string;
-  kind: 'pdf' | 'image';
+  kind: 'pdf' | 'image' | 'text';
   mimeType: string;
   size: number;
   text?: string;
   dataUrl?: string;
 }
+
+/**
+ * テキストとして読める拡張子の判定。MIME type が text/* なら無条件 OK。
+ * MIME が空 / application/octet-stream で来るケースに備え、拡張子も見る。
+ * バイナリ系の .pdf / .png / .jpg はここに含めない (別経路で処理する)。
+ */
+const TEXT_FILE_EXT_RE =
+  /\.(txt|md|markdown|log|json|csv|tsv|ya?ml|toml|ini|conf|html?|xml|svg|js|jsx|mjs|cjs|ts|tsx|css|scss|less|sh|bash|zsh|py|rb|go|rs|java|kt|swift|c|cpp|cc|h|hpp|cs|php|lua|sql|env|gitignore|gitattributes|editorconfig|rst|tex)$/i;
+function isTextFile(file: File): boolean {
+  if (file.type.startsWith('text/')) return true;
+  // application/json, application/xml なども text として扱う
+  if (file.type === 'application/json') return true;
+  if (file.type === 'application/xml') return true;
+  if (file.type === 'application/x-yaml') return true;
+  if (file.type === 'application/javascript') return true;
+  return TEXT_FILE_EXT_RE.test(file.name);
+}
+
+/** テキスト添付の上限サイズ (バイト)。これを超えると先頭だけ読んで注記する。 */
+const MAX_TEXT_ATTACHMENT_BYTES = 1 * 1024 * 1024; // 1MB
 
 function getActiveModelName(settings: AppSettings): string {
   const m = getActiveAiSettings(settings).model.trim();
@@ -284,21 +304,28 @@ function arrayBufferToDataUrl(buffer: ArrayBuffer, mimeType: string): string {
 }
 
 function buildAttachmentContext(attachments: AiChatAttachment[]): string {
+  // PDF / TEXT 系の中身を AI に投げる文脈テキストとして組み立て。
+  // 画像は別経路 (chat input の attachments パラメータ) で送られるためここでは含めない。
   const sections = attachments
-    .filter((a) => a.kind === 'pdf')
+    .filter((a) => a.kind === 'pdf' || a.kind === 'text')
     .map((a) => {
       const text = a.text?.trim();
+      const label = a.kind === 'pdf' ? 'PDF' : 'TEXT';
+      const fallback =
+        a.kind === 'pdf'
+          ? '(PDFからテキストを抽出できませんでした)'
+          : '(テキストの読み込みに失敗しました)';
       return [
-        `--- PDF: ${a.name} (${formatBytes(a.size)}) ---`,
-        text || '(PDFからテキストを抽出できませんでした)',
+        `--- ${label}: ${a.name} (${formatBytes(a.size)}) ---`,
+        text || fallback,
       ].join('\n');
     });
   if (sections.length === 0) return '';
   return [
-    '=== ドロップされたPDFの内容 (InkNelには保存せず、このチャット内だけで参照) ===',
+    '=== ドロップされたファイルの内容 (InkNelには保存せず、このチャット内だけで参照) ===',
     ...sections,
-    '=== PDF内容ここまで ===',
-    '回答では上記PDF内容を根拠として扱ってください。',
+    '=== ファイル内容ここまで ===',
+    '回答では上記ファイル内容を根拠として扱ってください。',
   ].join('\n\n');
 }
 
@@ -974,7 +1001,8 @@ export default function AiChatPanel({
       (file) =>
         file.type.startsWith('image/') ||
         file.type === 'application/pdf' ||
-        file.name.toLowerCase().endsWith('.pdf'),
+        file.name.toLowerCase().endsWith('.pdf') ||
+        isTextFile(file),
     );
     const unsupportedCount = dropped.length - supported.length;
     if (unsupportedCount > 0) {
@@ -983,17 +1011,18 @@ export default function AiChatPanel({
         {
           id: makeLocalId('e'),
           role: 'assistant',
-          text: `未対応のファイル ${unsupportedCount} 件をスキップしました。PDFまたは画像をドロップしてください。`,
+          text: `未対応のファイル ${unsupportedCount} 件をスキップしました。画像 / PDF / テキストファイルをドロップしてください。`,
         },
       ]);
     }
     for (const file of supported) {
       try {
-        const buffer = await file.arrayBuffer();
         const isPdf =
           file.type === 'application/pdf' ||
           file.name.toLowerCase().endsWith('.pdf');
+        const isImage = file.type.startsWith('image/') && !isPdf;
         if (isPdf) {
+          const buffer = await file.arrayBuffer();
           const text = await extractPdfText(buffer);
           setAttachments((prev) => [
             ...prev,
@@ -1006,7 +1035,8 @@ export default function AiChatPanel({
               text,
             },
           ]);
-        } else {
+        } else if (isImage) {
+          const buffer = await file.arrayBuffer();
           const mimeType = file.type || 'image/png';
           setAttachments((prev) => [
             ...prev,
@@ -1017,6 +1047,30 @@ export default function AiChatPanel({
               mimeType,
               size: file.size,
               dataUrl: arrayBufferToDataUrl(buffer, mimeType),
+            },
+          ]);
+        } else {
+          // テキストファイル: そのまま文字列で読み込む。
+          // 大きすぎる場合は先頭だけを採用してチャット末尾に注記を追加する。
+          let text = await file.text();
+          let truncated = false;
+          if (text.length > MAX_TEXT_ATTACHMENT_BYTES) {
+            text = text.slice(0, MAX_TEXT_ATTACHMENT_BYTES);
+            truncated = true;
+          }
+          if (truncated) {
+            text +=
+              `\n\n[…ファイルが ${formatBytes(MAX_TEXT_ATTACHMENT_BYTES)} を超えたため、先頭部分のみ取り込みました]`;
+          }
+          setAttachments((prev) => [
+            ...prev,
+            {
+              id: makeLocalId('att'),
+              name: file.name,
+              kind: 'text',
+              mimeType: file.type || 'text/plain',
+              size: file.size,
+              text,
             },
           ]);
         }
@@ -1184,7 +1238,12 @@ export default function AiChatPanel({
             {attachments.map((attachment) => (
               <span key={attachment.id} className="ai-chat__attachment">
                 <span className="ai-chat__attachment-name">
-                  {attachment.kind === 'pdf' ? 'PDF' : '画像'}: {attachment.name}
+                  {attachment.kind === 'pdf'
+                    ? 'PDF'
+                    : attachment.kind === 'image'
+                      ? '画像'
+                      : 'テキスト'}
+                  : {attachment.name}
                 </span>
                 <span className="ai-chat__attachment-size">
                   {formatBytes(attachment.size)}

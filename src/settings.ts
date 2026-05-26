@@ -255,6 +255,18 @@ export interface AppSettings {
   codeShowLineNumbers: boolean;
   /** エディタ右側にミニマップを表示するか（VSCode 風） */
   editorMinimap: boolean;
+  /** 編集中 (カーソルがある) 行にアンダーラインを表示するか */
+  editorActiveLineUnderline: boolean;
+  /** 編集中の行のアンダーラインの色 (CSS 色文字列、例: "#6878a8")。空ならアクセント色 */
+  editorActiveLineUnderlineColor: string;
+  /** 行番号側にもアクティブ行のハイライトを出す */
+  editorHighlightActiveLineGutter: boolean;
+  /** 対になる括弧をハイライト */
+  editorBracketMatching: boolean;
+  /** [ → ]、( → )、" → " 等のペア自動補完 */
+  editorCloseBrackets: boolean;
+  /** Tab の幅 (半角文字何個分か。1〜8) */
+  editorTabSize: number;
   /**
    * シンタックスハイライトを有効化する言語の id 一覧。
    * 空配列なら全 fence ブロックがプレーンレンダリングになる。
@@ -353,6 +365,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   codeCopyAlwaysVisible: false,
   codeShowLineNumbers: false,
   editorMinimap: false,
+  editorActiveLineUnderline: true,
+  editorActiveLineUnderlineColor: '',
+  editorHighlightActiveLineGutter: true,
+  editorBracketMatching: true,
+  editorCloseBrackets: true,
+  editorTabSize: 4,
   enabledHighlightLangs: DEFAULT_ENABLED_HIGHLIGHT_LANGS,
   shareProvider: 'none',
   storagePath: '',
@@ -460,6 +478,32 @@ export function parseSettings(raw: Record<string, string>): AppSettings {
       raw['editor.minimap'],
       DEFAULT_SETTINGS.editorMinimap,
     ),
+    editorActiveLineUnderline: parseBool(
+      raw['editor.activeLineUnderline'],
+      DEFAULT_SETTINGS.editorActiveLineUnderline,
+    ),
+    // 色文字列はそのまま採用 (CSS バリデーションは UI 側で行う想定)
+    editorActiveLineUnderlineColor:
+      typeof raw['editor.activeLineUnderlineColor'] === 'string'
+        ? raw['editor.activeLineUnderlineColor']
+        : DEFAULT_SETTINGS.editorActiveLineUnderlineColor,
+    editorHighlightActiveLineGutter: parseBool(
+      raw['editor.highlightActiveLineGutter'],
+      DEFAULT_SETTINGS.editorHighlightActiveLineGutter,
+    ),
+    editorBracketMatching: parseBool(
+      raw['editor.bracketMatching'],
+      DEFAULT_SETTINGS.editorBracketMatching,
+    ),
+    editorCloseBrackets: parseBool(
+      raw['editor.closeBrackets'],
+      DEFAULT_SETTINGS.editorCloseBrackets,
+    ),
+    editorTabSize: (() => {
+      const v = parseInt(raw['editor.tabSize'] ?? '', 10);
+      if (!Number.isFinite(v)) return DEFAULT_SETTINGS.editorTabSize;
+      return Math.min(8, Math.max(1, v));
+    })(),
     enabledHighlightLangs: parseHighlightLangs(
       raw['codeBlock.enabledHighlightLangs'],
       DEFAULT_SETTINGS.enabledHighlightLangs,
@@ -581,6 +625,33 @@ export function settingToRecord<K extends keyof AppSettings>(
       return { key: 'codeBlock.showLineNumbers', value: String(value) };
     case 'editorMinimap':
       return { key: 'editor.minimap', value: String(value) };
+    case 'editorActiveLineUnderline':
+      return { key: 'editor.activeLineUnderline', value: String(value) };
+    case 'editorActiveLineUnderlineColor':
+      return {
+        key: 'editor.activeLineUnderlineColor',
+        value: String(value ?? ''),
+      };
+    case 'editorHighlightActiveLineGutter':
+      return {
+        key: 'editor.highlightActiveLineGutter',
+        value: String(value),
+      };
+    case 'editorBracketMatching':
+      return {
+        key: 'editor.bracketMatching',
+        value: String(value),
+      };
+    case 'editorCloseBrackets':
+      return {
+        key: 'editor.closeBrackets',
+        value: String(value),
+      };
+    case 'editorTabSize':
+      return {
+        key: 'editor.tabSize',
+        value: String(value),
+      };
     case 'enabledHighlightLangs':
       return {
         key: 'codeBlock.enabledHighlightLangs',

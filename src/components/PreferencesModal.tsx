@@ -1159,6 +1159,132 @@ function GeneralPanel({ settings, onChange }: PanelProps) {
 
       <div className="prefs__field">
         <div className="prefs__field-main">
+          <label className="prefs__field-label">
+            {t.settings.general.editorActiveLineUnderline}
+          </label>
+          <p className="prefs__field-desc">
+            {t.settings.general.editorActiveLineUnderlineDesc}
+          </p>
+        </div>
+        <ToggleSwitch
+          checked={settings.editorActiveLineUnderline}
+          onChange={(v) => onChange('editorActiveLineUnderline', v)}
+          ariaLabel={t.settings.general.editorActiveLineUnderline}
+        />
+      </div>
+
+      {settings.editorActiveLineUnderline && (
+        <div className="prefs__field">
+          <div className="prefs__field-main">
+            <label
+              className="prefs__field-label"
+              htmlFor="prefs-editor-underline-color"
+            >
+              {t.settings.general.editorActiveLineUnderlineColor}
+            </label>
+            <p className="prefs__field-desc">
+              {t.settings.general.editorActiveLineUnderlineColorDesc}
+            </p>
+          </div>
+          <div className="prefs__field-inline">
+            <input
+              id="prefs-editor-underline-color"
+              type="color"
+              className="prefs__color-input"
+              value={settings.editorActiveLineUnderlineColor || '#6878a8'}
+              onChange={(e) =>
+                onChange('editorActiveLineUnderlineColor', e.target.value)
+              }
+              aria-label={t.settings.general.editorActiveLineUnderlineColor}
+            />
+            <button
+              type="button"
+              className="prefs__btn-secondary"
+              onClick={() => onChange('editorActiveLineUnderlineColor', '')}
+              title={t.settings.general.editorActiveLineUnderlineColorReset}
+            >
+              {t.settings.general.editorActiveLineUnderlineColorReset}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ---- 編集機能トグル群 (CodeMirror 拡張の有効/無効) ---- */}
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label className="prefs__field-label">
+            {t.settings.general.editorHighlightActiveLineGutter}
+          </label>
+          <p className="prefs__field-desc">
+            {t.settings.general.editorHighlightActiveLineGutterDesc}
+          </p>
+        </div>
+        <ToggleSwitch
+          checked={settings.editorHighlightActiveLineGutter}
+          onChange={(v) => onChange('editorHighlightActiveLineGutter', v)}
+          ariaLabel={t.settings.general.editorHighlightActiveLineGutter}
+        />
+      </div>
+
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label className="prefs__field-label">
+            {t.settings.general.editorBracketMatching}
+          </label>
+          <p className="prefs__field-desc">
+            {t.settings.general.editorBracketMatchingDesc}
+          </p>
+        </div>
+        <ToggleSwitch
+          checked={settings.editorBracketMatching}
+          onChange={(v) => onChange('editorBracketMatching', v)}
+          ariaLabel={t.settings.general.editorBracketMatching}
+        />
+      </div>
+
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label className="prefs__field-label">
+            {t.settings.general.editorCloseBrackets}
+          </label>
+          <p className="prefs__field-desc">
+            {t.settings.general.editorCloseBracketsDesc}
+          </p>
+        </div>
+        <ToggleSwitch
+          checked={settings.editorCloseBrackets}
+          onChange={(v) => onChange('editorCloseBrackets', v)}
+          ariaLabel={t.settings.general.editorCloseBrackets}
+        />
+      </div>
+
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label className="prefs__field-label" htmlFor="prefs-editor-tab-size">
+            {t.settings.general.editorTabSize}
+          </label>
+          <p className="prefs__field-desc">
+            {t.settings.general.editorTabSizeDesc}
+          </p>
+        </div>
+        <select
+          id="prefs-editor-tab-size"
+          className="prefs__select"
+          value={String(settings.editorTabSize)}
+          onChange={(e) =>
+            onChange('editorTabSize', parseInt(e.target.value, 10))
+          }
+        >
+          {[2, 3, 4, 5, 6, 7, 8].map((n) => (
+            <option key={n} value={String(n)}>
+              {n}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="prefs__field">
+        <div className="prefs__field-main">
           <label className="prefs__field-label" htmlFor="prefs-history-mode">
             {t.settings.general.historyMode}
           </label>

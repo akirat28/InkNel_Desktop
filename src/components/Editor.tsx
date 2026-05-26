@@ -10,8 +10,14 @@ import {
   keymap,
   lineNumbers,
   highlightActiveLine,
+  highlightActiveLineGutter as cmHighlightActiveLineGutter,
   runScopeHandlers,
 } from '@codemirror/view';
+import { bracketMatching as cmBracketMatching } from '@codemirror/language';
+import {
+  closeBrackets as cmCloseBrackets,
+  closeBracketsKeymap,
+} from '@codemirror/autocomplete';
 import {
   cursorCharLeft,
   cursorCharRight,
@@ -52,6 +58,18 @@ interface Props {
   onScroll?: (scrollEl: HTMLElement) => void;
   /** エディタ右側にミニマップを表示するか */
   showMinimap?: boolean;
+  /** 編集中 (カーソル行) にアンダーラインを表示するか */
+  activeLineUnderline?: boolean;
+  /** アンダーラインの色 (CSS 色文字列)。空ならアクセント色を使う。 */
+  activeLineUnderlineColor?: string;
+  /** 行番号側もアクティブ行を強調するか */
+  highlightActiveLineGutter?: boolean;
+  /** 対になる括弧をハイライトするか */
+  bracketMatching?: boolean;
+  /** [ → ] 等のペア自動補完を有効化するか */
+  closeBrackets?: boolean;
+  /** Tab の幅 (半角文字何個分か) */
+  tabSize?: number;
 }
 
 export interface MacroKey {
@@ -573,7 +591,20 @@ export interface EditorHandle {
 }
 
 const Editor = forwardRef<EditorHandle, Props>(function Editor(
-  { value, onChange, theme, onFocusChange, onScroll, showMinimap },
+  {
+    value,
+    onChange,
+    theme,
+    onFocusChange,
+    onScroll,
+    showMinimap,
+    activeLineUnderline,
+    activeLineUnderlineColor,
+    highlightActiveLineGutter: optHighlightActiveLineGutter = true,
+    bracketMatching: optBracketMatching = true,
+    closeBrackets: optCloseBrackets = true,
+    tabSize: optTabSize = 4,
+  },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -663,6 +694,44 @@ const Editor = forwardRef<EditorHandle, Props>(function Editor(
         const pos =
           view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
           view.state.selection.main.head;
+        void handleFileDrop(view, files, pos);
+        return true;
+      },
+    });
+
+    // クリップボードからの画像 / ファイル貼り付け対応。
+    // スクリーンショットや Web からコピーした画像は ClipboardItem の kind='file'
+    // として入ってくるので、それを取り出して既存の handleFileDrop に流す。
+    // テキストだけのペーストは default 挙動 (preventDefault せず) を維持する。
+    const pasteHandlers = EditorView.domEventHandlers({
+      paste: (event, view) => {
+        if (!event.clipboardData) return false;
+        const items = Array.from(event.clipboardData.items);
+        const files: File[] = [];
+        for (const item of items) {
+          if (item.kind !== 'file') continue;
+          const blob = item.getAsFile();
+          if (!blob) continue;
+          // クリップボード由来の image は name が "image.png" 等の generic に
+          // なりがちなので、`clipboard-<timestamp>.<ext>` にリネームしてから
+          // 既存の保存ロジックに渡す。これで Markdown のリンクテキストが
+          // 重複しない可読な名前になる。
+          const isImage = blob.type.startsWith('image/');
+          if (isImage) {
+            const ext = MIME_TO_EXT[blob.type] || 'png';
+            const named = new File(
+              [blob],
+              `clipboard-${Date.now()}.${ext}`,
+              { type: blob.type },
+            );
+            if (classifyFile(named) !== 'unknown') files.push(named);
+          } else if (classifyFile(blob) !== 'unknown') {
+            files.push(blob);
+          }
+        }
+        if (files.length === 0) return false; // テキストペーストは default に委譲
+        event.preventDefault();
+        const pos = view.state.selection.main.head;
         void handleFileDrop(view, files, pos);
         return true;
       },
@@ -769,12 +838,23 @@ const Editor = forwardRef<EditorHandle, Props>(function Editor(
       extensions: [
         lineNumbers(),
         highlightActiveLine(),
+        // アクティブ行の行番号側にも背景ハイライトを付ける
+        optHighlightActiveLineGutter ? cmHighlightActiveLineGutter() : [],
+        // 対になる括弧 (), [], {} やコードフェンス内のかっこをハイライト
+        optBracketMatching ? cmBracketMatching() : [],
+        // [ で ]、( で )、" で " を自動入力 (ペア閉じ)
+        optCloseBrackets ? cmCloseBrackets() : [],
+        // Tab 幅 (半角文字相当)。コードブロック内の Tab/Shift-Tab インデントもこの値に追従。
+        EditorState.tabSize.of(
+          Math.min(8, Math.max(1, Math.round(optTabSize))),
+        ),
         history(),
         keymap.of([
           // コードブロック内でのみ Tab/Shift-Tab を有効化。外側では preventDefault
           // しないので従来通りフォーカス移動になる。
           { key: 'Tab', run: tabInCodeBlockCommand },
           { key: 'Shift-Tab', run: shiftTabInCodeBlockCommand },
+          ...(optCloseBrackets ? closeBracketsKeymap : []),
           ...defaultKeymap,
           ...historyKeymap,
         ]),
@@ -783,6 +863,7 @@ const Editor = forwardRef<EditorHandle, Props>(function Editor(
         EditorView.lineWrapping,
         focusHandlers,
         dragHandlers,
+        pasteHandlers,
         Prec.high(macroHandlers),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
@@ -1152,9 +1233,22 @@ const Editor = forwardRef<EditorHandle, Props>(function Editor(
     [],
   );
 
+  // 編集中の行のアンダーライン表示。設定 ON のときに data 属性を出して
+  // CSS 側で .cm-activeLine の box-shadow を効かせる。色は CSS 変数で渡す。
+  const underlineEnabled = activeLineUnderline !== false;
+  const underlineColor = (activeLineUnderlineColor ?? '').trim();
   return (
     <div className="editor-pane">
-      <div ref={hostRef} className="editor" />
+      <div
+        ref={hostRef}
+        className="editor"
+        data-active-line-underline={underlineEnabled ? 'on' : 'off'}
+        style={
+          underlineColor
+            ? ({ ['--editor-underline-color' as never]: underlineColor } as React.CSSProperties)
+            : undefined
+        }
+      />
       {macroNotice && (
         <div className="editor-macro-notice" role="status">
           {macroNotice}

@@ -39,6 +39,11 @@ interface Props {
   pinnedTabIds: readonly string[];
   /** 📍 表示の有効化フラグ（preview-tab モードが活きている時に true） */
   pinIndicatorEnabled: boolean;
+  /**
+   * タブをダブルクリックされた時に「ピン留め」する。既にピン留め済みでも
+   * 何もしない (idempotent)。解除は右クリックメニュー等の別操作で行う。
+   */
+  onPinTab?: (id: string) => void;
 }
 
 /** 1 回のクリックで横スクロールする量 (px) */
@@ -73,6 +78,7 @@ export default function TabBar({
   previewTabId,
   pinnedTabIds,
   pinIndicatorEnabled,
+  onPinTab,
 }: Props) {
   const t = useT();
   // 右クリックメニューの表示位置 + 対象タブ ID
@@ -272,6 +278,15 @@ export default function TabBar({
                   } else if (e.button === 0 && !isActive) {
                     onSelect(id);
                   }
+                }}
+                onDoubleClick={(e) => {
+                  // ダブルクリックで「ピン留め」を立てる (idempotent: 既に
+                  // ピン留め済みなら no-op)。プレビュータブ → 固定タブへの
+                  // 昇格と同じ意味付け。
+                  e.preventDefault();
+                  if (!onPinTab) return;
+                  if (pinnedTabIds.includes(id)) return;
+                  onPinTab(id);
                 }}
                 onContextMenu={(e) => handleContextMenu(e, id)}
                 onDragStart={(e) => {

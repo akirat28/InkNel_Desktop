@@ -5122,6 +5122,40 @@ body,
   border-bottom: 1px solid var(--border);
 }
 
+/* 設定行内で複数コントロールを横並びに置く (色ピッカー + リセットボタン等) */
+.prefs__field-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.prefs__color-input {
+  width: 40px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.prefs__btn-secondary {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.prefs__btn-secondary:hover {
+  background: var(--bg-elevated);
+  border-color: var(--accent);
+}
+
 /* ---------- PinInput（4 桁数字パスワード入力） ---------- */
 .pin-input {
   display: inline-flex;
@@ -5515,11 +5549,26 @@ body,
   font-family: inherit;
 }
 
+/* カーソル行に細い下線を引いて目立たせる。
+   - data-active-line-underline="on" のときだけ表示 (設定でトグル可能)
+   - 色は --editor-underline-color (inline style で渡された値) を優先、無ければアクセント色
+   - box-shadow inset を使うことで行の高さを 1px も変えず、レイアウト揺れを避ける
+   - CodeMirror デフォルトの薄い背景ハイライトはそのまま重ねて使う */
+.editor[data-active-line-underline='on'] .cm-activeLine {
+  box-shadow: inset 0 -1px 0
+    var(
+      --editor-underline-color,
+      color-mix(in srgb, var(--accent, #6878a8) 55%, transparent)
+    );
+}
+
 /* ---------- Preview ---------- */
 .preview {
   flex: 1;
   overflow: auto;
-  padding: 32px 48px;
+  /* 上 4px / 下 16px / 左右 48px。上はぎりぎりまで詰めて、ノートヘッダ
+     直下に先頭の H1 / 本文が貼り付くように見せる。 */
+  padding: 4px 48px 16px;
   line-height: 1.7;
   background: var(--bg);
   /* 設定で指定されたフォントとサイズ（未設定時はフォールバック） */
@@ -5535,6 +5584,10 @@ body,
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  /* .preview の padding-top を 4px まで詰めたので、タグありノートでは
+     タグバー自身が以前と同じ上余白 (合計 ≒ 32px) を確保する。
+     padding-top 4px + margin-top 28px = 32px。 */
+  margin-top: 28px;
   margin-bottom: 28px;
   padding: 0;
   border: none;
@@ -5591,6 +5644,17 @@ body,
   font-weight: 600;
   /* スクロール時、フッターやノートヘッダの陰に隠れない余白 */
   scroll-margin-top: 16px;
+}
+
+/* 先頭要素は親の padding-top と二重に空くと隙間が大きくなりすぎるため
+   margin-top を打ち消す (一般的な Markdown プレビューの定石)。
+   - 例外: タグバー (.preview__tags) は自身で margin-top を確保するので除外。
+   - タグバーがある場合はその直後の最初のブロック要素にも適用 (タグ ↔ 本文を密着) */
+.preview > :first-child:not(.preview__tags) {
+  margin-top: 0;
+}
+.preview > .preview__tags + * {
+  margin-top: 0;
 }
 
 /* アンカーリンクで飛んだ時の一時ハイライト */

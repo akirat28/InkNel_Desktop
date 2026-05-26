@@ -3206,6 +3206,26 @@ export default function App() {
     setPasswordPurpose(null);
   };
 
+  // エディタ拡張系の設定ハッシュ。これらは EditorState.create のタイミングでだけ
+  // 反映できる (= CodeMirror を再構築しないと切替が効かない) ため、
+  // `<Editor key={editorConfigKey}>` に渡してプロパティ変化時に再マウントする。
+  // 同じ activeId 内では editorConfigKey も同じなので、通常編集中の re-mount は起きない。
+  const editorConfigKey = useMemo(
+    () =>
+      [
+        settings.editorHighlightActiveLineGutter,
+        settings.editorBracketMatching,
+        settings.editorCloseBrackets,
+        settings.editorTabSize,
+      ].join('|'),
+    [
+      settings.editorHighlightActiveLineGutter,
+      settings.editorBracketMatching,
+      settings.editorCloseBrackets,
+      settings.editorTabSize,
+    ],
+  );
+
   // アプリ終了前にも保留分を書き出す
   useEffect(() => {
     const handler = () => {
@@ -3347,6 +3367,15 @@ export default function App() {
             // openNoteInNewTab=true(常に新規タブ) では preview の概念がないため、
             // 📍 を出すと全タブに 📍 が並んで意味を失うので隠す。
             pinIndicatorEnabled={!settings.openNoteInNewTab}
+            // タブのダブルクリックでピン留め。アクティブ化も同時に行い、
+            // プレビュータブから固定タブへの昇格と同等の挙動にする。
+            onPinTab={(id) => {
+              setPinnedTabIds((prev) =>
+                prev.includes(id) ? prev : [...prev, id],
+              );
+              // ダブルクリック対象がプレビュータブだった場合は preview の指定を外す。
+              setPreviewTabId((prev) => (prev === id ? null : prev));
+            }}
           />
           <div className="app__workspace" ref={workspaceRef}>
             {fontSizeIndicator !== null && (
@@ -3419,6 +3448,7 @@ export default function App() {
                            中央のリサイザーをドラッグすると分割比 (Editor 側 %) が
                            更新され、localStorage に永続化される。 */}
                         <Editor
+                          key={editorConfigKey}
                           ref={editorRef}
                           value={body}
                           onChange={handleBodyChange}
@@ -3426,6 +3456,16 @@ export default function App() {
                           onFocusChange={setEditorFocused}
                           onScroll={handleEditorScroll}
                           showMinimap={settings.editorMinimap}
+                          activeLineUnderline={settings.editorActiveLineUnderline}
+                          activeLineUnderlineColor={
+                            settings.editorActiveLineUnderlineColor
+                          }
+                          highlightActiveLineGutter={
+                            settings.editorHighlightActiveLineGutter
+                          }
+                          bracketMatching={settings.editorBracketMatching}
+                          closeBrackets={settings.editorCloseBrackets}
+                          tabSize={settings.editorTabSize}
                         />
                         <div
                           className={`note__body-splitter ${mixResizing ? 'is-active' : ''}`}
@@ -3459,12 +3499,23 @@ export default function App() {
                       </>
                     ) : view === 'edit' ? (
                       <Editor
+                        key={editorConfigKey}
                         ref={editorRef}
                         value={body}
                         onChange={handleBodyChange}
                         theme={settings.theme}
                         onFocusChange={setEditorFocused}
                         showMinimap={settings.editorMinimap}
+                        activeLineUnderline={settings.editorActiveLineUnderline}
+                        activeLineUnderlineColor={
+                          settings.editorActiveLineUnderlineColor
+                        }
+                        highlightActiveLineGutter={
+                          settings.editorHighlightActiveLineGutter
+                        }
+                        bracketMatching={settings.editorBracketMatching}
+                        closeBrackets={settings.editorCloseBrackets}
+                        tabSize={settings.editorTabSize}
                       />
                     ) : (
                       <Preview
