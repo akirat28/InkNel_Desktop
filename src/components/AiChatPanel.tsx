@@ -1165,8 +1165,16 @@ export default function AiChatPanel({
           )
         )}
         {busy && messages[messages.length - 1]?.text === '' && (
-          <div className="ai-chat__message ai-chat__message--assistant">
-            {t.aiChat.waitingResponse}
+          <div
+            className="ai-chat__message ai-chat__message--assistant ai-chat__thinking"
+            role="status"
+            aria-label={t.aiChat.waitingResponse}
+          >
+            {/* 思考中インジケータ: 3 つのドットが順番に跳ねる (iMessage 風)。
+                animation-delay を 0 / 0.16 / 0.32s ずらして波打つように見せる。 */}
+            <span className="ai-chat__thinking-dot" />
+            <span className="ai-chat__thinking-dot" />
+            <span className="ai-chat__thinking-dot" />
           </div>
         )}
       </div>

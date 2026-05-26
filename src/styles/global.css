@@ -2872,6 +2872,57 @@ body,
   border: 1px solid var(--border);
 }
 
+/* ----- AI 思考中インジケータ (3 ドットが順番に跳ねる) ----- */
+.ai-chat__thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  /* 3 ドットがバウンドする縦幅を確保 (line-height 由来の縦サイズと揃える) */
+  min-height: calc(var(--ai-chat-msg-font-size, 12px) * 1.6);
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.ai-chat__thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fg-muted, currentColor);
+  opacity: 0.55;
+  animation: ai-chat-thinking-bounce 1.1s ease-in-out infinite;
+  /* GPU 合成に乗せて滑らかに跳ねさせる */
+  will-change: transform, opacity;
+}
+
+.ai-chat__thinking-dot:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.ai-chat__thinking-dot:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes ai-chat-thinking-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-5px);
+    opacity: 0.95;
+  }
+}
+
+/* 「アニメーションを減らす」アクセシビリティ設定が ON なら静止 */
+@media (prefers-reduced-motion: reduce) {
+  .ai-chat__thinking-dot {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
 /* AI 応答 + undo ボタンの縦並び。message-block 自体はレイアウト箱で
    見た目を持たず、内側の .ai-chat__message が従来の見た目を保つ。 */
 .ai-chat__message-block {
