@@ -20,7 +20,7 @@ import {
   writeFileSync,
   promises as fsp,
 } from 'node:fs';
-import { closeDb, initDb } from './db/index';
+import { initDb } from './db/index';
 import { basename, extname, join, relative, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
@@ -55,12 +55,10 @@ import {
   readBody,
   readBodyWithMeta,
   readFrontMatterOnly,
-  writeBody,
   writeNoteFile,
   deleteBody,
   writeTombstone,
   isTombstoneMeta,
-  purgeOldTombstones,
 } from './storage/notesFiles';
 import {
   saveImage,

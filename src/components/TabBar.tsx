@@ -27,11 +27,6 @@ interface Props {
   aiChatOpen: boolean;
   aiEnabled: boolean;
   /**
-   * 「プレビュータブ」として保持されているタブの ID（任意）。
-   * preview-tab スワップ動作の参照に使う (📍 表示判定には使わない)。
-   */
-  previewTabId: string | null;
-  /**
    * 明示的にピン留めされたタブ ID の一覧。📍 はこれに含まれるタブだけ表示する。
    * 旧モデルは「preview tab 以外すべて 📍」だったため、タブクリックなどで
    * 一時的にピンが消える問題があった。新モデルではここに入ったら閉じるまで永続。
@@ -75,7 +70,6 @@ export default function TabBar({
   summarizeBusy,
   aiChatOpen,
   aiEnabled,
-  previewTabId,
   pinnedTabIds,
   pinIndicatorEnabled,
   onPinTab,

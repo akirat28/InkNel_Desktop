@@ -10,7 +10,6 @@ import type { FileItem, TreeNode } from '../types';
 import { useT } from '../i18n';
 import { buildTree } from '../utils/buildTree';
 import SearchPanel from './SearchPanel';
-import SyncPanel from './SyncPanel';
 import StorageSyncPanel from './StorageSyncPanel';
 import TagsPanel from './TagsPanel';
 import HistoryPanel, { type HistoryEntry } from './HistoryPanel';
@@ -18,12 +17,7 @@ import CalendarPanel from '../calendar/CalendarPanel';
 import { getEnabledPlugins } from '../plugins/registry';
 import { subscribeRuntimePlugins } from '../plugins/runtimeLoader';
 import type { AppSettings } from '../settings';
-import type {
-  NoteMeta,
-  ShareProviderId,
-  ShareSyncProgress,
-  ShareSyncResult,
-} from '../global';
+import type { NoteMeta } from '../global';
 
 /**
  * サイドバーのモード ID。本体組み込みは files / search / tags / history / sync。
@@ -86,23 +80,11 @@ interface Props {
   onRenameFolder: (folderPath: string) => void;
   /** フォルダを配下ごと削除 */
   onDeleteFolder: (folderPath: string) => void;
-  /** 共有プロバイダ（'none' なら sync パネルは使わない） */
-  shareProvider: ShareProviderId;
   /**
    * 設定で指定されたファイル保存先フォルダパス。
    * 空文字列なら「保存先未設定」状態として StorageSyncPanel の代わりに案内を表示する。
    */
   storagePath: string;
-  /** 同期開始トリガー（SyncPanel の「同期開始」ボタンから） */
-  onStartSync: () => Promise<void>;
-  /** 同期実行中フラグ */
-  syncing: boolean;
-  /** 最新の進捗イベント */
-  syncProgress: ShareSyncProgress | null;
-  /** 前回同期の結果 */
-  syncLastResult: ShareSyncResult | null;
-  /** 前回同期のエラー */
-  syncLastError: string | null;
   /** ノート開封履歴（新しい順）。'history' モードで表示 */
   openHistory: HistoryEntry[];
   /** 履歴クリア処理 */
@@ -167,13 +149,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
     onRenameNote,
     onRenameFolder,
     onDeleteFolder,
-    shareProvider,
     storagePath,
-    onStartSync,
-    syncing,
-    syncProgress,
-    syncLastResult,
-    syncLastError,
     openHistory,
     onClearOpenHistory,
     notes,
@@ -1408,65 +1384,6 @@ function KebabIcon() {
 
 // ----- メニュー項目用アイコン -----
 
-function RenameIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M2.5 13 L3 10 L11 2 A1 1 0 0 1 12.5 2 L14 3.5 A1 1 0 0 1 14 5 L6 13 Z" />
-      <path d="M9.5 3.5 L12.5 6.5" />
-    </svg>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M2.5 4 H13.5" />
-      <path d="M5 4 V2.8 a1 1 0 0 1 1 -1 h4 a1 1 0 0 1 1 1 V4" />
-      <path d="M3.6 4 l0.7 9.2 a1 1 0 0 0 1 0.9 h5.4 a1 1 0 0 0 1 -0.9 L12.4 4" />
-      <path d="M6.5 6.8 V12 M9.5 6.8 V12" />
-    </svg>
-  );
-}
-
-function LockIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="3.2" y="7" width="9.6" height="7" rx="1.2" />
-      <path d="M5.2 7 V4.8 a2.8 2.8 0 0 1 5.6 0 V7" />
-    </svg>
-  );
-}
-
 /** ゴミ箱セクションヘッダのアイコン */
 function TrashSidebarIcon() {
   return (
@@ -1529,25 +1446,6 @@ function LockSmallIcon() {
   );
 }
 
-function UnlockIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="3.2" y="7" width="9.6" height="7" rx="1.2" />
-      <path d="M5.2 7 V4.8 a2.8 2.8 0 0 1 5.6 0" />
-    </svg>
-  );
-}
-
 /** ファイル行用 12px の解錠アイコン (LockSmallIcon と寸法を揃える) */
 function UnlockSmallIcon() {
   return (
@@ -1564,27 +1462,6 @@ function UnlockSmallIcon() {
     >
       <rect x="3.2" y="7" width="9.6" height="7" rx="1.2" />
       <path d="M5.2 7 V4.8 a2.8 2.8 0 0 1 5.6 0" />
-    </svg>
-  );
-}
-
-/** シークレット用の目に斜線アイコン */
-function SecretIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M2 8 C 4 4.5, 6 3.5, 8 3.5 C 10 3.5, 12 4.5, 14 8 C 12 11.5, 10 12.5, 8 12.5 C 6 12.5, 4 11.5, 2 8 Z" />
-      <circle cx="8" cy="8" r="2" />
-      <line x1="2.5" y1="13.5" x2="13.5" y2="2.5" />
     </svg>
   );
 }

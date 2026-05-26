@@ -30,8 +30,6 @@ interface Props {
   onOpenSettings: () => void;
   /** 保存先（ストレージ）ボタン押下時のコールバック */
   onSelectStorage: () => void;
-  /** 同期中ローディング表示 */
-  sharing: boolean;
   /**
    * クラウド同期の進捗 %。null/undefined ならリング非表示。
    * 0-100 のとき保存先アイコンの外周にプログレスリングを描画する。
@@ -130,7 +128,6 @@ export default function ActivityBar({
   onSelectPluginMode,
   onOpenSettings,
   onSelectStorage,
-  sharing,
   syncProgressPercent,
 }: Props) {
   const t = useT();
@@ -351,31 +348,6 @@ function HddIcon({ spinning }: { spinning?: boolean }) {
       {/* 通気スリット */}
       <line x1="6" y1="8" x2="13" y2="8" />
       <line x1="6" y1="16" x2="13" y2="16" />
-    </svg>
-  );
-}
-
-/** クラウド同期（共有）アイコン（旧。現在未使用） */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function ShareIcon({ spinning }: { spinning?: boolean }) {
-  return (
-    <svg
-      width="22"
-      height="22"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className={spinning ? 'activity__icon--spinning' : undefined}
-    >
-      {/* クラウドのアウトライン */}
-      <path d="M6 16 a4 4 0 0 1 0.5 -7.95 a5 5 0 0 1 9.9 -0.5 a4.5 4.5 0 0 1 1.1 8.45 H6 z" />
-      {/* 上下の同期矢印 */}
-      <path d="M10 13 L10 17 L8 15 M10 17 L12 15" />
-      <path d="M14 17 L14 13 L16 15 M14 13 L12 15" />
     </svg>
   );
 }

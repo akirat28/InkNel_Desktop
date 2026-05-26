@@ -89,12 +89,7 @@ const PinInput = forwardRef<PinInputHandle, Props>(function PinInput(
     // 数字以外を弾く
     const digit = ch.replace(/\D/g, '');
     if (digit.length === 0) {
-      // 空入力 = 削除
-      const next = value.split('');
-      next[idx] = '';
-      // 末尾の空文字を削るのではなく、その位置だけクリア
-      const merged = next.join('').slice(0, idx) + next.slice(idx + 1).join('');
-      // 上記は複雑になるので、シンプルに「該当桁だけ ' ' に置き換えてから空文字フィルタ」
+      // 空入力 = 該当桁をクリア (1 桁分の空文字に置換)
       const arr = chars.slice();
       arr[idx] = '';
       onChange(arr.join(''));

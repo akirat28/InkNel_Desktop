@@ -2520,26 +2520,6 @@ function FolderOpenIcon() {
   );
 }
 
-function UploadIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <path d="M7 9l5-5 5 5" />
-      <path d="M12 4v12" />
-    </svg>
-  );
-}
-
-
 // ----- プラグインパネル -----
 // `src/plugins/<id>.ts` として配置されたプラグインを registry から自動検出し、
 // 検出されたものだけ ON/OFF トグルを表示する。
@@ -2778,20 +2758,6 @@ function PluginsPanel({ settings, onChange }: PanelProps) {
     }
     return map;
   }, [downloadedManifests]);
-
-  const handleImport = async (id: string) => {
-    setInstallNotice(null);
-    const result = await importPluginById(id);
-    if (!result.ok) {
-      setInstallNotice(`インポートに失敗しました: ${result.error}`);
-      return;
-    }
-    // 永続化（次回起動時にも自動でロードされる）
-    if (!settings.importedPlugins.includes(id)) {
-      onChange('importedPlugins', [...settings.importedPlugins, id]);
-    }
-    setInstallNotice(`${id} をインポートしました`);
-  };
 
   const handleUninstall = async (id: string) => {
     const filename = downloadedById.get(id);

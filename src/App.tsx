@@ -2537,21 +2537,24 @@ export default function App() {
   const [syncingNoteId, setSyncingNoteId] = useState<string | null>(null);
 
   // ----- 同期状態管理 -----
-  // SyncPanel から「同期開始」ボタンを押されたときに呼ばれる。
-  // main プロセスで runSync が走り、進捗が share:progress イベントで届く。
+  // share.onProgress (cloud sync 進捗イベント) を購読するためのキャッシュ。
+  // 旧 SyncPanel からの手動同期 UI は廃止されたが、起動時自動同期 (line ~1133)
+  // 等の進捗をフッター進捗バー / アクティビティバーのリングへ反映する用途で残す。
   const [sharing, setSharing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<
     import('./global').ShareSyncProgress | null
   >(null);
-  const [syncLastResult, setSyncLastResult] = useState<
-    import('./global').ShareSyncResult | null
-  >(null);
-  const [syncLastError, setSyncLastError] = useState<string | null>(null);
 
-  // 進捗イベント購読（マウント時に 1 回）
+  // 進捗イベント購読（マウント時に 1 回）。
+  // 旧仕様では手動同期トリガー (handleStartSync) が setSharing(true/false) を制御
+  // していたが、UI からの手動トリガーは廃止されたので start/done フェーズで
+  // sharing フラグを自動切替する。これでフッター進捗バー / 進捗リングが
+  // 自動同期 (起動時等) でも反応する。
   useEffect(() => {
     const unsubscribe = window.api.share.onProgress((ev) => {
       setSyncProgress(ev);
+      if (ev.phase === 'start') setSharing(true);
+      else if (ev.phase === 'done') setSharing(false);
     });
     return unsubscribe;
   }, []);
@@ -2617,40 +2620,32 @@ export default function App() {
     return () => clearTimeout(t);
   }, [sharing]);
 
-  const handleStartSync = async (): Promise<void> => {
-    if (settings.shareProvider === 'none' || sharing) return;
-    setSharing(true);
-    setSyncProgress(null);
-    setSyncLastError(null);
-    try {
-      const result = await window.api.share.sync(settings.shareProvider);
-      setSyncLastResult(result);
-      if (result.pulled > 0) {
-        const refreshed = await window.api.notes.list();
-        setNotes(refreshed);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setSyncLastError(msg);
-    } finally {
-      setSharing(false);
-      setSyncProgress(null);
-    }
-  };
+  // ノート一覧の id → meta ルックアップを 1 度だけ Map 化しておく。
+  // タブバー (連携ノート) / アクティブノート判定 / ノート削除フローなどから
+  // 大量に find() されるので、O(n) → O(1) に下げる効果が大きい。
+  const notesById = useMemo(
+    () => new Map(notes.map((n) => [n.id, n])),
+    [notes],
+  );
 
-  // 現在選択中ノートが「ロック状態」か判定
-  const activeNoteMeta = activeId
-    ? notes.find((n) => n.id === activeId) ?? null
-    : null;
+  // 現在選択中ノートが「ロック状態」か判定 (deps が変わった時だけ再計算)
+  const activeNoteMeta = useMemo(
+    () => (activeId ? notesById.get(activeId) ?? null : null),
+    [activeId, notesById],
+  );
   const isActiveLocked =
     activeNoteMeta?.protected === true &&
     activeId !== null &&
     !unlockedNoteIds.has(activeId);
-  const linkedNotes = activeNoteMeta
-    ? activeNoteMeta.linkedNoteIds
-        .map((id) => notes.find((n) => n.id === id))
-        .filter((note): note is NoteMeta => Boolean(note))
-    : [];
+  const linkedNotes = useMemo<NoteMeta[]>(
+    () =>
+      activeNoteMeta
+        ? activeNoteMeta.linkedNoteIds
+            .map((id) => notesById.get(id))
+            .filter((note): note is NoteMeta => Boolean(note))
+        : [],
+    [activeNoteMeta, notesById],
+  );
 
   const handleAddLinkedNote = useCallback(
     async (linkedNoteId: string) => {
@@ -3282,7 +3277,6 @@ export default function App() {
           onSelectPluginMode={handleSelectPluginMode}
           onOpenSettings={() => void window.api.openPreferencesWindow()}
           onSelectStorage={handleSelectStorage}
-          sharing={sharing}
           syncProgressPercent={syncRingPercent}
         />
         <div className="app__body">
@@ -3325,13 +3319,7 @@ export default function App() {
           onRenameNote={handleStartRename}
           onRenameFolder={handleStartRenameFolder}
           onDeleteFolder={(folderPath) => void handleDeleteFolder(folderPath)}
-          shareProvider={settings.shareProvider}
           storagePath={settings.storagePath}
-          onStartSync={handleStartSync}
-          syncing={sharing}
-          syncProgress={syncProgress}
-          syncLastResult={syncLastResult}
-          syncLastError={syncLastError}
           openHistory={openHistory}
           onClearOpenHistory={handleClearOpenHistory}
           notes={notes}
@@ -3361,7 +3349,6 @@ export default function App() {
             summarizeBusy={aiBusy}
             aiChatOpen={aiChatOpen}
             aiEnabled={getActiveAiSettings(settings).token.trim().length > 0}
-            previewTabId={previewTabId}
             pinnedTabIds={pinnedTabIds}
             // 📍 表示は preview-tab モードのときだけ。
             // openNoteInNewTab=true(常に新規タブ) では preview の概念がないため、
