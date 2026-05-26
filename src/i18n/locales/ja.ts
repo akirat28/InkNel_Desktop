@@ -217,6 +217,11 @@ const ja: Locale = {
       about: 'ライセンス',
     },
     general: {
+      subAppearance: '外観',
+      subSidebar: 'サイドバー',
+      subEditor: 'エディタ',
+      subTabs: 'タブ・ノート一覧',
+      subHistory: '検索と履歴',
       theme: 'テーマ',
       themeDesc:
         'UI 全体の配色を切り替えます。ダーク（黒背景）またはライト（白背景）から選択できます。',

@@ -945,6 +945,14 @@ function GeneralPanel({ settings, onChange }: PanelProps) {
     <div className="prefs__section">
       <h3 className="prefs__section-title">{t.settings.categories.general}</h3>
 
+      {/* ============================================================
+          外観 (テーマ / 言語 / 本文フォント / フォントサイズ / 日付書式)
+         ============================================================ */}
+      <section className="prefs__subsection">
+      <h4 className="prefs__subsection-title">
+        {t.settings.general.subAppearance}
+      </h4>
+
       <div className="prefs__field">
         <div className="prefs__field-main">
           <label className="prefs__field-label">{t.settings.general.theme}</label>
@@ -958,10 +966,7 @@ function GeneralPanel({ settings, onChange }: PanelProps) {
 
       <div className="prefs__field">
         <div className="prefs__field-main">
-          <label
-            className="prefs__field-label"
-            htmlFor="prefs-language"
-          >
+          <label className="prefs__field-label" htmlFor="prefs-language">
             {t.settings.general.language}
           </label>
           <p className="prefs__field-desc">{t.settings.general.languageDesc}</p>
@@ -1016,7 +1021,9 @@ function GeneralPanel({ settings, onChange }: PanelProps) {
           id="prefs-font-size"
           className="prefs__select"
           value={String(settings.fontSize)}
-          onChange={(e) => onChange('fontSize', Number(e.target.value) as FontSize)}
+          onChange={(e) =>
+            onChange('fontSize', Number(e.target.value) as FontSize)
+          }
         >
           {FONT_SIZE_OPTIONS.map((s) => (
             <option key={s} value={String(s)}>
@@ -1025,6 +1032,39 @@ function GeneralPanel({ settings, onChange }: PanelProps) {
           ))}
         </select>
       </div>
+
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label className="prefs__field-label" htmlFor="prefs-date-format">
+            {t.settings.general.dateFormat}
+          </label>
+          <p className="prefs__field-desc">
+            {t.settings.general.dateFormatDesc}
+          </p>
+        </div>
+        <select
+          id="prefs-date-format"
+          className="prefs__select"
+          value={settings.dateFormat}
+          onChange={(e) => onChange('dateFormat', e.target.value)}
+        >
+          {DATE_FORMAT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      </section>
+
+      {/* ============================================================
+          サイドバー (フォント / サイズ)
+         ============================================================ */}
+      <section className="prefs__subsection">
+      <h4 className="prefs__subsection-title">
+        {t.settings.general.subSidebar}
+      </h4>
 
       <div className="prefs__field">
         <div className="prefs__field-main">
@@ -1082,28 +1122,15 @@ function GeneralPanel({ settings, onChange }: PanelProps) {
         </select>
       </div>
 
-      <div className="prefs__field">
-        <div className="prefs__field-main">
-          <label className="prefs__field-label" htmlFor="prefs-date-format">
-            {t.settings.general.dateFormat}
-          </label>
-          <p className="prefs__field-desc">
-            {t.settings.general.dateFormatDesc}
-          </p>
-        </div>
-        <select
-          id="prefs-date-format"
-          className="prefs__select"
-          value={settings.dateFormat}
-          onChange={(e) => onChange('dateFormat', e.target.value)}
-        >
-          {DATE_FORMAT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      </section>
+
+      {/* ============================================================
+          エディタ (ツールバー / ミニマップ / アンダーライン / 括弧 / Tab 幅)
+         ============================================================ */}
+      <section className="prefs__subsection">
+      <h4 className="prefs__subsection-title">
+        {t.settings.general.subEditor}
+      </h4>
 
       <div className="prefs__field">
         <div className="prefs__field-main">
@@ -1118,26 +1145,6 @@ function GeneralPanel({ settings, onChange }: PanelProps) {
           checked={settings.showInsertButtons}
           onChange={(v) => onChange('showInsertButtons', v)}
           ariaLabel={t.settings.general.showInsertButtons}
-        />
-      </div>
-
-      <div className="prefs__field">
-        <div className="prefs__field-main">
-          <label className="prefs__field-label">
-            ノートのクリックで新たなタブで開く
-          </label>
-          <p className="prefs__field-desc">
-            ON: サイドバーでクリックするたびに新しいタブが追加されます。
-            <br />
-            OFF (既定): 直前にクリックして開いたタブを編集していなければ、
-            そのタブを閉じて新しいノートを同じ位置に開きます (プレビュータブ動作)。
-            ノートを編集するとそのタブは固定され、自動で閉じなくなります。
-          </p>
-        </div>
-        <ToggleSwitch
-          checked={settings.openNoteInNewTab}
-          onChange={(v) => onChange('openNoteInNewTab', v)}
-          ariaLabel="ノートのクリックで新たなタブで開く"
         />
       </div>
 
@@ -1209,7 +1216,6 @@ function GeneralPanel({ settings, onChange }: PanelProps) {
         </div>
       )}
 
-      {/* ---- 編集機能トグル群 (CodeMirror 拡張の有効/無効) ---- */}
       <div className="prefs__field">
         <div className="prefs__field-main">
           <label className="prefs__field-label">
@@ -1283,105 +1289,36 @@ function GeneralPanel({ settings, onChange }: PanelProps) {
         </select>
       </div>
 
-      <div className="prefs__field">
-        <div className="prefs__field-main">
-          <label className="prefs__field-label" htmlFor="prefs-history-mode">
-            {t.settings.general.historyMode}
-          </label>
-          <p className="prefs__field-desc">
-            {t.settings.general.historyModeDesc}
-          </p>
-        </div>
-        <select
-          id="prefs-history-mode"
-          className="prefs__select"
-          value={settings.searchHistoryMode}
-          onChange={(e) =>
-            onChange('searchHistoryMode', e.target.value as SearchHistoryMode)
-          }
-        >
-          <option value="reset">
-            {t.settings.general.historyModeOptionReset}
-          </option>
-          <option value="persist">
-            {t.settings.general.historyModeOptionPersist}
-          </option>
-        </select>
-      </div>
+      </section>
 
-      <div className="prefs__field">
-        <div className="prefs__field-main">
-          <label className="prefs__field-label" htmlFor="prefs-history-limit">
-            {t.settings.general.historyLimit}
-          </label>
-          <p className="prefs__field-desc">
-            {t.settings.general.historyLimitDesc}
-          </p>
-        </div>
-        <select
-          id="prefs-history-limit"
-          className="prefs__select"
-          value={String(settings.searchHistoryLimit)}
-          onChange={(e) =>
-            onChange(
-              'searchHistoryLimit',
-              Number(e.target.value) as SearchHistoryLimit,
-            )
-          }
-        >
-          <option value="100">
-            100 {t.settings.general.historyLimitItem}
-          </option>
-          <option value="1000">
-            1000 {t.settings.general.historyLimitItem}
-          </option>
-        </select>
-      </div>
+      {/* ============================================================
+          タブ・ノート一覧 (新規タブ動作 / ケバブ / 件数バッジ)
+         ============================================================ */}
+      <section className="prefs__subsection">
+      <h4 className="prefs__subsection-title">
+        {t.settings.general.subTabs}
+      </h4>
 
-      {/* ----- ノート開封履歴 ----- */}
       <div className="prefs__field">
         <div className="prefs__field-main">
           <label className="prefs__field-label">
-            {t.settings.general.openHistory}
+            ノートのクリックで新たなタブで開く
           </label>
           <p className="prefs__field-desc">
-            {t.settings.general.openHistoryDesc}
+            ON: サイドバーでクリックするたびに新しいタブが追加されます。
+            <br />
+            OFF (既定): 直前にクリックして開いたタブを編集していなければ、
+            そのタブを閉じて新しいノートを同じ位置に開きます (プレビュータブ動作)。
+            ノートを編集するとそのタブは固定され、自動で閉じなくなります。
           </p>
         </div>
         <ToggleSwitch
-          checked={settings.historyEnabled}
-          onChange={(v) => onChange('historyEnabled', v)}
-          ariaLabel={t.settings.general.openHistoryAria}
+          checked={settings.openNoteInNewTab}
+          onChange={(v) => onChange('openNoteInNewTab', v)}
+          ariaLabel="ノートのクリックで新たなタブで開く"
         />
       </div>
 
-      <div className="prefs__field">
-        <div className="prefs__field-main">
-          <label className="prefs__field-label" htmlFor="prefs-open-history-limit">
-            {t.settings.general.openHistoryLimit}
-          </label>
-          <p className="prefs__field-desc">
-            {t.settings.general.openHistoryLimitDesc}
-          </p>
-        </div>
-        <select
-          id="prefs-open-history-limit"
-          className="prefs__select"
-          value={String(settings.historyLimit)}
-          onChange={(e) =>
-            onChange(
-              'historyLimit',
-              Number(e.target.value) as OpenHistoryLimit,
-            )
-          }
-          disabled={!settings.historyEnabled}
-        >
-          <option value="100">100 {t.settings.general.historyLimitItem}</option>
-          <option value="1000">1000 {t.settings.general.historyLimitItem}</option>
-        </select>
-      </div>
-
-      {/* ----- サイドバー行内アイテムの表示設定 ----- */}
       <div className="prefs__field">
         <div className="prefs__field-main">
           <label
@@ -1478,6 +1415,119 @@ function GeneralPanel({ settings, onChange }: PanelProps) {
           ))}
         </select>
       </div>
+
+      </section>
+
+      {/* ============================================================
+          検索と履歴 (検索履歴の保存方式 / 件数 / ノート開封履歴)
+         ============================================================ */}
+      <section className="prefs__subsection">
+      <h4 className="prefs__subsection-title">
+        {t.settings.general.subHistory}
+      </h4>
+
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label className="prefs__field-label" htmlFor="prefs-history-mode">
+            {t.settings.general.historyMode}
+          </label>
+          <p className="prefs__field-desc">
+            {t.settings.general.historyModeDesc}
+          </p>
+        </div>
+        <select
+          id="prefs-history-mode"
+          className="prefs__select"
+          value={settings.searchHistoryMode}
+          onChange={(e) =>
+            onChange('searchHistoryMode', e.target.value as SearchHistoryMode)
+          }
+        >
+          <option value="reset">
+            {t.settings.general.historyModeOptionReset}
+          </option>
+          <option value="persist">
+            {t.settings.general.historyModeOptionPersist}
+          </option>
+        </select>
+      </div>
+
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label className="prefs__field-label" htmlFor="prefs-history-limit">
+            {t.settings.general.historyLimit}
+          </label>
+          <p className="prefs__field-desc">
+            {t.settings.general.historyLimitDesc}
+          </p>
+        </div>
+        <select
+          id="prefs-history-limit"
+          className="prefs__select"
+          value={String(settings.searchHistoryLimit)}
+          onChange={(e) =>
+            onChange(
+              'searchHistoryLimit',
+              Number(e.target.value) as SearchHistoryLimit,
+            )
+          }
+        >
+          <option value="100">
+            100 {t.settings.general.historyLimitItem}
+          </option>
+          <option value="1000">
+            1000 {t.settings.general.historyLimitItem}
+          </option>
+        </select>
+      </div>
+
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label className="prefs__field-label">
+            {t.settings.general.openHistory}
+          </label>
+          <p className="prefs__field-desc">
+            {t.settings.general.openHistoryDesc}
+          </p>
+        </div>
+        <ToggleSwitch
+          checked={settings.historyEnabled}
+          onChange={(v) => onChange('historyEnabled', v)}
+          ariaLabel={t.settings.general.openHistoryAria}
+        />
+      </div>
+
+      <div className="prefs__field">
+        <div className="prefs__field-main">
+          <label
+            className="prefs__field-label"
+            htmlFor="prefs-open-history-limit"
+          >
+            {t.settings.general.openHistoryLimit}
+          </label>
+          <p className="prefs__field-desc">
+            {t.settings.general.openHistoryLimitDesc}
+          </p>
+        </div>
+        <select
+          id="prefs-open-history-limit"
+          className="prefs__select"
+          value={String(settings.historyLimit)}
+          onChange={(e) =>
+            onChange(
+              'historyLimit',
+              Number(e.target.value) as OpenHistoryLimit,
+            )
+          }
+          disabled={!settings.historyEnabled}
+        >
+          <option value="100">100 {t.settings.general.historyLimitItem}</option>
+          <option value="1000">
+            1000 {t.settings.general.historyLimitItem}
+          </option>
+        </select>
+      </div>
+      </section>
     </div>
   );
 }

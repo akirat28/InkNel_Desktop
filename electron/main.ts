@@ -68,6 +68,76 @@ function attachBlockDevToolsShortcut(win: BrowserWindow): void {
   });
 }
 
+/**
+ * Renderer 内で発生する navigation を全部 main プロセス側で握り、
+ * 「外部 URL は OS 既定ブラウザに逃がす / それ以外は無視」に統一する。
+ *
+ * これをやらないと:
+ *  - `<a href="https://attacker/" target="_blank">` クリックで Electron が
+ *    新規 BrowserWindow を開く (sandbox なしなので preload API が漏れる)
+ *  - `location.href = 'https://attacker/'` 等で **同一 BrowserWindow** が
+ *    攻撃者制御サイトに置き換わる。renderer から `window.api.*` を全て叩ける
+ *
+ * 自身の origin (file:// or dev http://localhost) 内の navigation は
+ * SPA 内遷移として許可する。それ以外は preventDefault + shell.openExternal。
+ */
+function hardenWindowNavigation(win: BrowserWindow): void {
+  const isSafeExternalUrl = (urlStr: string): boolean => {
+    try {
+      const u = new URL(urlStr);
+      return u.protocol === 'https:' || u.protocol === 'http:';
+    } catch {
+      return false;
+    }
+  };
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isSafeExternalUrl(url)) {
+      void shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  win.webContents.on('will-navigate', (event, urlStr) => {
+    const currentUrlStr = win.webContents.getURL();
+    if (urlStr === currentUrlStr) return;
+    try {
+      const next = new URL(urlStr);
+      const current = new URL(currentUrlStr);
+      // 同一 origin (= 自身の SPA 内ルート遷移) なら許可
+      if (next.origin === current.origin && next.protocol === current.protocol) {
+        return;
+      }
+    } catch {
+      // パースできないなら拒否
+    }
+    event.preventDefault();
+    if (isSafeExternalUrl(urlStr)) {
+      void shell.openExternal(urlStr);
+    }
+  });
+
+  // will-frame-navigate でも同じガード (iframe 経由の遷移)
+  win.webContents.on('will-frame-navigate', (event) => {
+    const urlStr = event.url;
+    const currentUrlStr = win.webContents.getURL();
+    if (urlStr === currentUrlStr) return;
+    try {
+      const next = new URL(urlStr);
+      const current = new URL(currentUrlStr);
+      if (next.origin === current.origin && next.protocol === current.protocol) {
+        return;
+      }
+    } catch {
+      // 拒否
+    }
+    event.preventDefault();
+    if (isSafeExternalUrl(urlStr)) {
+      void shell.openExternal(urlStr);
+    }
+  });
+}
+
 // ヘルプメニューから開く公式ホームページ URL
 const HOMEPAGE_URL = 'https://inknel.ary-ap.com/';
 // バージョン情報 JSON の URL（下記スキーマを想定）:
@@ -548,6 +618,7 @@ function openPreferencesWindow(): void {
     },
   });
   attachBlockDevToolsShortcut(preferencesWindow);
+  hardenWindowNavigation(preferencesWindow);
   // renderer が描画可能になったタイミングで表示
   preferencesWindow.once('ready-to-show', () => {
     if (preferencesWindow && !preferencesWindow.isDestroyed()) {
@@ -606,6 +677,7 @@ function createWindow(): void {
     },
   });
   attachBlockDevToolsShortcut(mainWindow);
+  hardenWindowNavigation(mainWindow);
   // ready-to-show で初期表示。maximize は show 前に呼んでも反映されるが、
   // show() の中で表示するほうがチラつきがない。
   mainWindow.once('ready-to-show', () => {

@@ -23,6 +23,8 @@ import {
 import { initDb } from './db/index';
 import { basename, extname, join, relative, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { isIPv4, isIPv6 } from 'node:net';
+import { promises as dnsp } from 'node:dns';
 import {
   listNotes,
   listTrashedNotes,
@@ -945,6 +947,91 @@ const USER_ABORT_REASON = 'user-aborted';
  *
  * HTML 以外 (text/plain, application/json など) はタイトル無し + 文字数制限のみ適用。
  */
+
+// ----- SSRF 対策ヘルパー -----
+// プライベート・ループバック・リンクローカル等の「外向きでない」アドレスを判定する。
+// fetch 前に DNS lookup して、解決された IP がプライベートなら拒否する。
+// hostname がリテラル IP の場合も同じく判定する。
+// リダイレクトを手動追従するときに各ホップで再検証する。
+
+function isPrivateIPv4Addr(ip: string): boolean {
+  const parts = ip.split('.').map((s) => parseInt(s, 10));
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n) || n < 0 || n > 255)) {
+    return true; // 不正な IP は安全側に倒して拒否
+  }
+  const [a, b] = parts;
+  if (a === 0) return true; // 0.0.0.0/8
+  if (a === 10) return true; // RFC1918
+  if (a === 127) return true; // loopback
+  if (a === 169 && b === 254) return true; // link-local (含 EC2/GCP metadata 169.254.169.254)
+  if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918
+  if (a === 192 && b === 168) return true; // RFC1918
+  if (a === 192 && b === 0) return true; // 192.0.0.0/24 IETF protocol, 192.0.2.0/24 TEST-NET-1
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGN 100.64.0.0/10
+  if (a >= 224) return true; // multicast (224/4) と 240/4 reserved
+  return false;
+}
+
+function isPrivateIPv6Addr(ip: string): boolean {
+  const lower = ip.toLowerCase().split('%')[0]; // zone id を除去
+  // IPv4-mapped (::ffff:a.b.c.d) と IPv4-compatible (::a.b.c.d)
+  const v4mapped = lower.match(/::(?:ffff:)?(\d+\.\d+\.\d+\.\d+)$/);
+  if (v4mapped) return isPrivateIPv4Addr(v4mapped[1]);
+  if (lower === '::' || lower === '::1') return true; // unspecified / loopback
+  // ULA fc00::/7 (fc.. or fd..)
+  if (/^f[cd][0-9a-f]{2}:/i.test(lower)) return true;
+  // link-local fe80::/10
+  if (/^fe[89ab][0-9a-f]:/i.test(lower)) return true;
+  // multicast ff00::/8
+  if (lower.startsWith('ff')) return true;
+  return false;
+}
+
+async function assertHostnameIsPublic(
+  hostname: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  // host が IP リテラル
+  if (isIPv4(hostname)) {
+    return isPrivateIPv4Addr(hostname)
+      ? { ok: false, reason: `プライベート IP は許可されていません (${hostname})` }
+      : { ok: true };
+  }
+  if (isIPv6(hostname)) {
+    return isPrivateIPv6Addr(hostname)
+      ? { ok: false, reason: `プライベート IP は許可されていません (${hostname})` }
+      : { ok: true };
+  }
+  // hostname → DNS 解決して全アドレスをチェック
+  // DNS-rebinding を防ぐため後段の fetch も同じ hostname を使うが、
+  // OS の resolver キャッシュがあるので「lookup と fetch で別 IP」になる可能性は実用上ほぼ無視できる
+  try {
+    const addrs = await dnsp.lookup(hostname, { all: true });
+    if (!addrs || addrs.length === 0) {
+      return { ok: false, reason: `名前解決できませんでした (${hostname})` };
+    }
+    for (const a of addrs) {
+      if (a.family === 4 && isPrivateIPv4Addr(a.address)) {
+        return {
+          ok: false,
+          reason: `プライベート IP に解決されました (${hostname} → ${a.address})`,
+        };
+      }
+      if (a.family === 6 && isPrivateIPv6Addr(a.address)) {
+        return {
+          ok: false,
+          reason: `プライベート IP に解決されました (${hostname} → ${a.address})`,
+        };
+      }
+    }
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: `名前解決に失敗しました: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
 function extractReadableText(
   raw: string,
   contentType: string,
@@ -2745,54 +2832,110 @@ export function registerIpc(): void {
           error: `${parsed.protocol} はサポートされていません`,
         };
       }
+      const MAX_BYTES = 5 * 1024 * 1024;
+      const MAX_REDIRECTS = 5;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 15_000);
+      let currentUrl = parsed;
       try {
-        const res = await fetch(parsed.toString(), {
-          method: 'GET',
-          redirect: 'follow',
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (compatible; InkNel/0.4) Gecko/20100101 Firefox/119.0',
-            Accept:
-              'text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.5',
-          },
-          signal: controller.signal,
-        });
-        if (!res.ok) {
-          return {
-            ok: false,
-            url,
-            error: `HTTP ${res.status} ${res.statusText}`,
-          };
+        for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+          // ----- SSRF ガード: ホスト名/IP をプライベート空間でないか毎ホップで検証 -----
+          const safe = await assertHostnameIsPublic(currentUrl.hostname);
+          if (!safe.ok) {
+            return { ok: false, url, error: safe.reason };
+          }
+          const res = await fetch(currentUrl.toString(), {
+            method: 'GET',
+            // 各 hop を手動で検証するため自動追従はしない
+            redirect: 'manual',
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (compatible; InkNel/0.4) Gecko/20100101 Firefox/119.0',
+              Accept:
+                'text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.5',
+            },
+            signal: controller.signal,
+          });
+          // 3xx → Location を取り出して次ホップへ
+          if (res.status >= 300 && res.status < 400) {
+            const location = res.headers.get('location');
+            if (!location) {
+              return {
+                ok: false,
+                url,
+                error: `リダイレクト ${res.status} だが Location ヘッダがありません`,
+              };
+            }
+            let next: URL;
+            try {
+              next = new URL(location, currentUrl);
+            } catch {
+              return {
+                ok: false,
+                url,
+                error: 'リダイレクト先 URL の形式が不正です',
+              };
+            }
+            if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+              return {
+                ok: false,
+                url,
+                error: `リダイレクト先のプロトコルが ${next.protocol} です`,
+              };
+            }
+            currentUrl = next;
+            continue;
+          }
+          if (!res.ok) {
+            return {
+              ok: false,
+              url,
+              error: `HTTP ${res.status} ${res.statusText}`,
+            };
+          }
+          const contentType = (res.headers.get('content-type') || '').toLowerCase();
+          // バイナリは弾く
+          if (
+            contentType &&
+            !contentType.includes('html') &&
+            !contentType.includes('text') &&
+            !contentType.includes('json') &&
+            !contentType.includes('xml')
+          ) {
+            return {
+              ok: false,
+              url,
+              error: `テキスト系コンテンツではありません (${contentType})`,
+            };
+          }
+          // Content-Length を読んで上限超なら本文を読まずに即拒否
+          const clHeader = res.headers.get('content-length');
+          const cl = clHeader ? parseInt(clHeader, 10) : Number.NaN;
+          if (Number.isFinite(cl) && cl > MAX_BYTES) {
+            return {
+              ok: false,
+              url,
+              error: `Content-Length が 5MB を超えます (${cl} bytes)`,
+            };
+          }
+          // 実本文サイズも arrayBuffer 後にチェック (chunked / 偽 CL 対策)
+          const buf = await res.arrayBuffer();
+          if (buf.byteLength > MAX_BYTES) {
+            return {
+              ok: false,
+              url,
+              error: `本文サイズが 5MB を超えています (${buf.byteLength} bytes)`,
+            };
+          }
+          const rawText = new TextDecoder('utf-8').decode(buf);
+          const { title, content } = extractReadableText(rawText, contentType);
+          return { ok: true, url, title, content };
         }
-        const contentType = (res.headers.get('content-type') || '').toLowerCase();
-        // バイナリは弾く
-        if (
-          contentType &&
-          !contentType.includes('html') &&
-          !contentType.includes('text') &&
-          !contentType.includes('json') &&
-          !contentType.includes('xml')
-        ) {
-          return {
-            ok: false,
-            url,
-            error: `テキスト系コンテンツではありません (${contentType})`,
-          };
-        }
-        // サイズ上限 5MB
-        const buf = await res.arrayBuffer();
-        if (buf.byteLength > 5 * 1024 * 1024) {
-          return {
-            ok: false,
-            url,
-            error: `本文サイズが 5MB を超えています (${buf.byteLength} bytes)`,
-          };
-        }
-        const rawText = new TextDecoder('utf-8').decode(buf);
-        const { title, content } = extractReadableText(rawText, contentType);
-        return { ok: true, url, title, content };
+        return {
+          ok: false,
+          url,
+          error: `リダイレクトが ${MAX_REDIRECTS} 回を超えました`,
+        };
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
           return { ok: false, url, error: '取得がタイムアウトしました (15秒)' };
@@ -2861,6 +3004,45 @@ export function registerIpc(): void {
    */
   ipcMain.handle('plugins:list-local-files', (): string[] => listLocalFiles());
 
+  // ===== プラグインカタログ/インストールのドメイン pinning =====
+  // 公式カタログ ホストに加え、ユーザーが設定 (`plugin.catalogUrls`) で
+  // 明示的に登録した URL のホスト名のみを「プラグインを取得して良い」場所として扱う。
+  // これがないと renderer 由来の任意 URL でプラグインがインストールされてしまい、
+  // MITM や XSS 起点の永続バックドアに繋がる (security audit HIGH#4)。
+  const OFFICIAL_PLUGIN_HOST = 'inknel.ary-ap.com';
+  function getAllowedPluginHosts(): Set<string> {
+    const hosts = new Set<string>([OFFICIAL_PLUGIN_HOST]);
+    try {
+      const raw = getAllSettings()['plugin.catalogUrls'];
+      if (typeof raw === 'string' && raw.trim()) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          for (const u of arr) {
+            if (typeof u !== 'string') continue;
+            try {
+              const host = new URL(u.trim()).hostname.toLowerCase();
+              if (host) hosts.add(host);
+            } catch {
+              // 不正な URL はスキップ
+            }
+          }
+        }
+      }
+    } catch {
+      // 設定読み込み失敗時は公式ホストのみ許可
+    }
+    return hosts;
+  }
+  function isAllowedPluginUrl(urlStr: string): boolean {
+    try {
+      const u = new URL(urlStr);
+      if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+      return getAllowedPluginHosts().has(u.hostname.toLowerCase());
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * リモートカタログ取得。
    * URL に到達できない / JSON パース失敗 / 想定外フォーマット → 全て null を返し、
@@ -2875,6 +3057,14 @@ export function registerIpc(): void {
       baseUrl: string;
       plugins: Array<{ id: string; manifest: string }>;
     } | null> => {
+      // ドメイン pinning: 許可ホスト以外は最初に弾く (任意 URL の fetch を防ぐ)
+      if (typeof url !== 'string' || !isAllowedPluginUrl(url)) {
+        console.warn(
+          '[plugins:fetch-catalog] disallowed host, refusing:',
+          String(url).slice(0, 200),
+        );
+        return null;
+      }
       try {
         const res = await fetch(url, { method: 'GET' });
         if (!res.ok) return null;
@@ -3050,6 +3240,17 @@ export function registerIpc(): void {
       const { filename, content, baseUrl } = args;
       const savedFiles: string[] = [];
       const missingFiles: string[] = [];
+
+      // ドメイン pinning: 許可ホスト以外の baseUrl は受け付けない
+      // (dev 用カスタムスキーム `inknel-plugin://` は別途許可)
+      const isDevSchemeBase = baseUrl.startsWith('inknel-plugin://');
+      if (!isDevSchemeBase && !isAllowedPluginUrl(baseUrl)) {
+        console.warn(
+          '[plugins:install] disallowed baseUrl, refusing:',
+          String(baseUrl).slice(0, 200),
+        );
+        return null;
+      }
 
       // 1) manifest を保存
       try {

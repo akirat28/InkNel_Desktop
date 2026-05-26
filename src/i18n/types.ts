@@ -236,6 +236,12 @@ export interface Locale {
       about: string;
     };
     general: {
+      // 「基本」タブ内のサブセクション見出し
+      subAppearance: string;
+      subSidebar: string;
+      subEditor: string;
+      subTabs: string;
+      subHistory: string;
       theme: string;
       themeDesc: string;
       themeDark: string;

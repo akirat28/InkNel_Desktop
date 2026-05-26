@@ -114,29 +114,46 @@ describe('attachmentsFiles', () => {
 });
 
 describe('notesFiles', () => {
+  // notesFiles は path traversal 対策で UUID 形式の id だけを受理する
+  const uuid = (n: number) =>
+    `${String(n).padStart(8, '0')}-0000-4000-8000-000000000000`;
+  const ID_NOTE_1 = uuid(1);
+  const ID_NOTE_X = uuid(2);
+  const ID_NOSUCH = uuid(3);
+  const ID_TOMB_1 = uuid(11);
+  const ID_TOMB_OLD = uuid(12);
+  const ID_TOMB_FRESH = uuid(13);
+  const ID_REGULAR = uuid(14);
+
   test('writeBody / readBody のラウンドトリップ', () => {
-    writeBody('note-1', '# Hello\nbody');
-    expect(readBody('note-1')).toBe('# Hello\nbody');
+    writeBody(ID_NOTE_1, '# Hello\nbody');
+    expect(readBody(ID_NOTE_1)).toBe('# Hello\nbody');
   });
 
   test('存在しないノートの readBody は空文字列', () => {
-    expect(readBody('nosuch')).toBe('');
+    expect(readBody(ID_NOSUCH)).toBe('');
   });
 
   test('deleteBody は冪等', () => {
-    writeBody('note-x', 'x');
-    deleteBody('note-x');
-    expect(readBody('note-x')).toBe('');
+    writeBody(ID_NOTE_X, 'x');
+    deleteBody(ID_NOTE_X);
+    expect(readBody(ID_NOTE_X)).toBe('');
     // 2 回目も例外なし
-    expect(() => deleteBody('note-x')).not.toThrow();
+    expect(() => deleteBody(ID_NOTE_X)).not.toThrow();
+  });
+
+  test('UUID 形式以外の id は例外', () => {
+    expect(() => writeBody('../etc/passwd', 'x')).toThrow();
+    expect(() => readBody('../etc/passwd')).toThrow();
+    expect(() => deleteBody('not-a-uuid')).toThrow();
   });
 
   test('writeTombstone は deleted=true / deleted_at の MD を残す', () => {
     // 後続の purgeOldTombstones テストに副作用を与えないよう「最近」を使う
     // (storageRoot キャッシュがテスト間で生き残るため tombstones は累積する)
     const recent = Date.now() - 1000 * 60; // 1 分前
-    writeTombstone('tomb-1', recent);
-    const { meta, body } = readBodyWithMeta('tomb-1');
+    writeTombstone(ID_TOMB_1, recent);
+    const { meta, body } = readBodyWithMeta(ID_TOMB_1);
     expect(isTombstoneMeta(meta)).toBe(true);
     expect(meta.deleted).toBe(true);
     expect(meta.deletedAt).toBe(recent);
@@ -154,18 +171,18 @@ describe('notesFiles', () => {
   test('purgeOldTombstones は retention を超えた tombstone のみ物理削除', async () => {
     const old = Date.now() - 1000 * 60 * 60 * 24 * 200; // 200 日前
     const fresh = Date.now() - 1000 * 60 * 60; // 1 時間前
-    writeTombstone('tomb-old', old);
-    writeTombstone('tomb-fresh', fresh);
-    writeBody('regular', '# 普通のノート');
+    writeTombstone(ID_TOMB_OLD, old);
+    writeTombstone(ID_TOMB_FRESH, fresh);
+    writeBody(ID_REGULAR, '# 普通のノート');
 
     const purged = await purgeOldTombstones(); // 既定 90 日
-    expect(purged).toEqual(['tomb-old']);
+    expect(purged).toEqual([ID_TOMB_OLD]);
 
     // 古い tombstone は物理削除されたので readBody は空
-    expect(readBody('tomb-old')).toBe('');
+    expect(readBody(ID_TOMB_OLD)).toBe('');
     // 新しい tombstone は残る
-    expect(isTombstoneMeta(readBodyWithMeta('tomb-fresh').meta)).toBe(true);
+    expect(isTombstoneMeta(readBodyWithMeta(ID_TOMB_FRESH).meta)).toBe(true);
     // 通常ノートには手を出さない
-    expect(readBody('regular')).toBe('# 普通のノート');
+    expect(readBody(ID_REGULAR)).toBe('# 普通のノート');
   });
 });

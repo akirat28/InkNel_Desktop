@@ -34,7 +34,20 @@ function notesDir(): string {
   return dir;
 }
 
+/**
+ * ノート id として受理する UUID v1-v5 形式の正規表現。
+ * `notes:read-body` / `notes:update-body` / `notes:delete` 等の IPC ハンドラは
+ * Renderer から渡された id をここに通すことで、`../` や絶対パス・null byte 等の
+ * path traversal を一律で塞ぐ。`notePath()` を経由しない他 API は無いため、
+ * 全ノート系ファイル I/O がこのガードを共有することになる。
+ */
+const NOTE_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function notePath(id: string): string {
+  if (typeof id !== 'string' || !NOTE_ID_RE.test(id)) {
+    throw new Error(`Invalid note id: ${String(id).slice(0, 64)}`);
+  }
   return join(notesDir(), `${id}.md`);
 }
 

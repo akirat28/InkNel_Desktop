@@ -217,6 +217,11 @@ const en: Locale = {
       about: 'License',
     },
     general: {
+      subAppearance: 'Appearance',
+      subSidebar: 'Sidebar',
+      subEditor: 'Editor',
+      subTabs: 'Tabs & note list',
+      subHistory: 'Search & history',
       theme: 'Theme',
       themeDesc:
         'Switch the overall color theme. Choose Dark (black background) or Light (white background).',

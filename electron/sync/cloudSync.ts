@@ -54,6 +54,19 @@ export interface ProviderInfo {
 }
 
 /**
+ * ノート id として受理する UUID 形式の正規表現。
+ * checkAndSyncSingleNote / pushSingleNote / removeSingleNote などは IPC 経由で
+ * Renderer から id を受け取るため、共有同期フォルダへの path traversal を
+ * 塞ぐためにファイル I/O 前に必ず通す。
+ */
+const NOTE_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidNoteId(id: unknown): id is string {
+  return typeof id === 'string' && NOTE_ID_RE.test(id);
+}
+
+/**
  * 3 つのプロバイダについてローカル同期フォルダが存在するかを返す。
  * 'none' は含まない（設定画面で "無効" は別扱い）。
  */
@@ -506,6 +519,7 @@ export function checkAndSyncSingleNote(
   noteId: string,
 ): SingleNoteSyncResult {
   if (provider === 'none') return 'skip';
+  if (!isValidNoteId(noteId)) return 'skip';
   const root = getSyncRoot(provider);
   if (!root) return 'skip';
 
@@ -568,6 +582,7 @@ export function checkAndSyncSingleNote(
  * プロバイダが 'none' や検出不可なら何もしない。
  */
 export function pushSingleNote(provider: ShareProvider, noteId: string): void {
+  if (!isValidNoteId(noteId)) return;
   const root = getSyncRoot(provider);
   if (!root) return;
   const note = listNotes().find((n) => n.id === noteId);
@@ -610,6 +625,7 @@ export function removeSingleNote(
   provider: ShareProvider,
   noteId: string,
 ): void {
+  if (!isValidNoteId(noteId)) return;
   const root = getSyncRoot(provider);
   if (!root) return;
 

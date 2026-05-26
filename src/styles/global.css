@@ -5108,6 +5108,35 @@ body,
   color: var(--fg);
 }
 
+/* 「基本」タブ内のサブカテゴリをまとめる角丸カード。
+   外観 / サイドバー / エディタ / タブ・ノート / 検索と履歴 などをそれぞれ
+   1 枚のカードで囲み、視覚的に区別する。 */
+.prefs__subsection {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated, var(--bg));
+  padding: 6px 18px 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* カード内では prefs__field の下線が連続して見えるので、最後のフィールドの下線だけ消す。 */
+.prefs__subsection > .prefs__field:last-child {
+  border-bottom: none;
+  padding-bottom: 4px;
+}
+
+/* サブカテゴリ見出し: カード上端にタイトルとして配置。 */
+.prefs__subsection-title {
+  margin: 0;
+  padding: 12px 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent, #6878a8);
+}
+
 .prefs__section {
   display: flex;
   flex-direction: column;
