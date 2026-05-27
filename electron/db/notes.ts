@@ -15,6 +15,11 @@ export interface NoteMeta {
   updatedAt: number;
   /** ゴミ箱に移動された epoch ms (null = 通常ノート) */
   trashedAt: number | null;
+  /**
+   * サイドバーのファイルアイコンに着色する CSS 色文字列 (例: '#FF3B30')。
+   * null は「色なし (現在の文字色フォールバック)」。
+   */
+  iconColor: string | null;
 }
 
 interface NoteRow {
@@ -29,6 +34,7 @@ interface NoteRow {
   created_at: number;
   updated_at: number;
   trashed_at: number | null;
+  icon_color: string | null;
 }
 
 function parseStringArray(raw: string): string[] {
@@ -55,6 +61,7 @@ function rowToMeta(row: NoteRow): NoteMeta {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     trashedAt: row.trashed_at,
+    iconColor: row.icon_color ?? null,
   };
 }
 
@@ -63,7 +70,7 @@ export function listNotes(): NoteMeta[] {
   const db = initDb();
   const rows = db
     .prepare(
-      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at, trashed_at
+      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at, trashed_at, icon_color
          FROM notes
         WHERE trashed_at IS NULL
         ORDER BY updated_at DESC`,
@@ -77,7 +84,7 @@ export function listTrashedNotes(): NoteMeta[] {
   const db = initDb();
   const rows = db
     .prepare(
-      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at, trashed_at
+      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at, trashed_at, icon_color
          FROM notes
         WHERE trashed_at IS NOT NULL
         ORDER BY trashed_at DESC`,
@@ -90,7 +97,7 @@ export function getNote(id: string): NoteMeta | null {
   const db = initDb();
   const row = db
     .prepare(
-      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at, trashed_at FROM notes WHERE id = ?`,
+      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at, trashed_at, icon_color FROM notes WHERE id = ?`,
     )
     .get(id) as NoteRow | undefined;
   return row ? rowToMeta(row) : null;
@@ -99,8 +106,8 @@ export function getNote(id: string): NoteMeta | null {
 export function insertNote(meta: NoteMeta, body = ''): void {
   const db = initDb();
   db.prepare(
-    `INSERT INTO notes (id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at)
-     VALUES (@id, @title, @folder, @protectedInt, @secretInt, @tagsJson, @linkedNoteIdsJson, @bodyText, @createdAt, @updatedAt)`,
+    `INSERT INTO notes (id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at, icon_color)
+     VALUES (@id, @title, @folder, @protectedInt, @secretInt, @tagsJson, @linkedNoteIdsJson, @bodyText, @createdAt, @updatedAt, @iconColorVal)`,
   ).run({
     ...meta,
     protectedInt: meta.protected ? 1 : 0,
@@ -108,7 +115,21 @@ export function insertNote(meta: NoteMeta, body = ''): void {
     tagsJson: JSON.stringify(meta.tags ?? []),
     linkedNoteIdsJson: JSON.stringify(meta.linkedNoteIds ?? []),
     bodyText: body,
+    iconColorVal: meta.iconColor ?? null,
   });
+}
+
+/**
+ * ノートのアイコンカラーだけを更新する。色は CSS 色文字列、null で「色なし」。
+ * updated_at は触らない (色変更は「ノート内容の変更」ではないため、modified date を保つ)。
+ */
+export function setNoteIconColor(
+  id: string,
+  iconColor: string | null,
+): NoteMeta | null {
+  const db = initDb();
+  db.prepare(`UPDATE notes SET icon_color = ? WHERE id = ?`).run(iconColor, id);
+  return getNote(id);
 }
 
 export function updateNoteMeta(
@@ -220,7 +241,7 @@ export function searchNotes(query: string): NoteMeta[] {
   const db = initDb();
   const rows = db
     .prepare(
-      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at, trashed_at,
+      `SELECT id, title, folder, protected, secret, tags, linked_note_ids, body, created_at, updated_at, trashed_at, icon_color,
               CASE WHEN lower(title) LIKE @like THEN 0 ELSE 1 END AS rank
          FROM notes
         WHERE trashed_at IS NULL

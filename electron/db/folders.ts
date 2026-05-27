@@ -2,15 +2,40 @@ import { initDb } from './index';
 
 interface FolderRow {
   path: string;
+  icon_color: string | null;
 }
 
-/** 空フォルダのパスを昇順で返す。 */
-export function listFolders(): string[] {
+export interface FolderMeta {
+  path: string;
+  /** サイドバーアイコンの色 (CSS 色文字列、null = 色なし) */
+  iconColor: string | null;
+}
+
+/** 空フォルダの一覧 (path 昇順)。サイドバーアイコン色も含む。 */
+export function listFolders(): FolderMeta[] {
   const db = initDb();
   const rows = db
-    .prepare(`SELECT path FROM folders ORDER BY path ASC`)
+    .prepare(`SELECT path, icon_color FROM folders ORDER BY path ASC`)
     .all() as FolderRow[];
-  return rows.map((r) => r.path);
+  return rows.map((r) => ({ path: r.path, iconColor: r.icon_color ?? null }));
+}
+
+/**
+ * フォルダのアイコン色を更新する。folders テーブルに該当パスが無ければ
+ * (空フォルダではない = ノートが直接配置されているパス) 新規挿入する。
+ */
+export function setFolderIconColor(
+  path: string,
+  iconColor: string | null,
+): void {
+  if (!path) return;
+  const db = initDb();
+  // 既存なら UPDATE、無ければ INSERT (UPSERT)
+  db.prepare(
+    `INSERT INTO folders (path, created_at, icon_color)
+     VALUES (?, ?, ?)
+     ON CONFLICT(path) DO UPDATE SET icon_color = excluded.icon_color`,
+  ).run(path, Date.now(), iconColor);
 }
 
 /**

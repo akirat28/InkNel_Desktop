@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import ContextMenu, { type ContextMenuItem } from './ContextMenu';
 import type { FileItem, TreeNode } from '../types';
 import { useT } from '../i18n';
 import { buildTree } from '../utils/buildTree';
@@ -67,6 +68,12 @@ interface Props {
   onDeleteNote: (id: string) => void;
   onToggleProtect: (id: string, next: boolean) => void;
   onToggleSecret: (id: string, next: boolean) => void;
+  /** ノートのアイコン色を更新 (null = 色なし) */
+  onSetNoteIconColor: (id: string, iconColor: string | null) => void;
+  /** フォルダのアイコン色を更新 (null = 色なし) */
+  onSetFolderIconColor: (path: string, iconColor: string | null) => void;
+  /** フォルダパス → アイコン色 (Sidebar 内のアイコン描画に使う) */
+  folderIconColors: Record<string, string | null>;
   onSearch: (query: string) => Promise<NoteMeta[]>;
   searchHistory: string[];
   onAddSearchHistory: (query: string) => void;
@@ -121,6 +128,28 @@ export interface SidebarHandle {
   expandFolder: (folderPath: string) => void;
 }
 
+/**
+ * 「アイコンカラー」ポップアップに並べる標準パレット。
+ * Apple Notes 風の 8 色 + 「色なし (既定)」。
+ * value が CSS 色文字列、null は「色なし」。サイドバーアイコン本体の着色に同値を使う。
+ */
+const ICON_COLOR_PALETTE: ReadonlyArray<{
+  id: string;
+  value: string | null;
+  label: string;
+}> = [
+  { id: 'iconColor:none', value: null, label: '色なし (既定)' },
+  { id: 'iconColor:red', value: '#FF3B30', label: '赤' },
+  { id: 'iconColor:orange', value: '#FF9500', label: 'オレンジ' },
+  { id: 'iconColor:yellow', value: '#FFCC00', label: '黄' },
+  { id: 'iconColor:green', value: '#34C759', label: '緑' },
+  { id: 'iconColor:blue', value: '#007AFF', label: '青' },
+  { id: 'iconColor:purple', value: '#AF52DE', label: '紫' },
+  { id: 'iconColor:pink', value: '#FF69B4', label: 'ピンク' },
+  { id: 'iconColor:gray', value: '#8E8E93', label: 'グレー' },
+];
+
+
 const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
   {
     collapsed,
@@ -141,6 +170,9 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
     onDeleteNote,
     onToggleProtect,
     onToggleSecret,
+    onSetNoteIconColor,
+    onSetFolderIconColor,
+    folderIconColors,
     onSearch,
     searchHistory,
     onAddSearchHistory,
@@ -165,6 +197,14 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
 ) {
   // ゴミ箱セクションの開閉状態
   const [trashOpen, setTrashOpen] = useState(false);
+  // ノート/フォルダの右クリック・ケバブメニュー (renderer 内 ContextMenu)。
+  // OS ネイティブメニューだとテキストに色を付けられないので、「アイコンカラー」を
+  // hover submenu で色付き ● を出すために renderer 内に切り替える。
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number;
+    y: number;
+    items: ContextMenuItem[];
+  } | null>(null);
 
   /** ゴミ箱ヘッダの右クリック: 「ゴミ箱を空にする」のみ */
   const openTrashHeaderMenu = async (e: React.MouseEvent) => {
@@ -464,68 +504,106 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
   };
 
   /**
-   * ファイル行のケバブから OS ネイティブメニューを開く。
-   * Web ベースの ContextMenu と違いウィンドウ外にもはみ出せる。
+   * 「アイコンカラー」サブメニュー (色付き ● 一覧) を組み立てるヘルパー。
+   * current と一致する項目には ✓ のサフィックスを付け、各色の値で着色した
+   * `●` (色なしは枠の `○`) を ContextMenuItem.icon に渡す。
    */
-  const openFileMenu = async (file: FileItem, e: React.MouseEvent) => {
+  const buildIconColorSubmenu = (
+    current: string | null,
+    onPick: (value: string | null) => void,
+  ): ContextMenuItem[] =>
+    ICON_COLOR_PALETTE.map((p) => ({
+      label: p.value === null ? p.label : p.label,
+      icon: (
+        <span
+          className={`ctx-color-dot ${p.value === null ? 'is-none' : ''}`}
+          style={p.value ? { color: p.value } : undefined}
+          aria-hidden="true"
+        >
+          {p.value === null ? '○' : '●'}
+        </span>
+      ),
+      onClick: () => onPick(p.value),
+      // 選択中項目はラベルに ✓ プレフィックス
+      ...(current === p.value
+        ? { label: `✓ ${p.label}` }
+        : {}),
+    }));
+
+  /**
+   * ファイル行のケバブ/右クリックでメニューを開く (renderer 内 ContextMenu)。
+   * 「アイコンカラー」項目はホバーで右に色付き submenu を展開する。
+   */
+  const openFileMenu = (file: FileItem, e: React.MouseEvent) => {
     e.stopPropagation();
     const isProtected = file.protected === true;
     const isSecret = file.secret === true;
-    const id = await window.api.ui.showContextMenu({
-      // クリック位置（ケバブクリック / 右クリック共通）にメニューを開く
-      position: { x: e.clientX, y: e.clientY },
-      items: [
-        { id: 'rename', label: t.sidebar.menu.fileRename },
-        {
-          id: 'protect',
-          label: isProtected
-            ? t.sidebar.menu.fileUnprotect
-            : t.sidebar.menu.fileProtect,
+    const items: ContextMenuItem[] = [
+      { label: t.sidebar.menu.fileRename, onClick: () => onRenameNote(file.id) },
+      {
+        label: isProtected
+          ? t.sidebar.menu.fileUnprotect
+          : t.sidebar.menu.fileProtect,
+        onClick: () => onToggleProtect(file.id, !isProtected),
+      },
+      {
+        label: isSecret
+          ? t.sidebar.menu.fileUnsecret
+          : t.sidebar.menu.fileMakeSecret,
+        onClick: () => onToggleSecret(file.id, !isSecret),
+      },
+      {
+        label: 'アイコンカラー',
+        submenu: buildIconColorSubmenu(file.iconColor ?? null, (v) =>
+          onSetNoteIconColor(file.id, v),
+        ),
+      },
+      { separator: true },
+      {
+        label: t.sidebar.menu.fileDelete,
+        danger: true,
+        disabled: isProtected,
+        onClick: () => {
+          const title = file.title || t.common.untitled;
+          if (
+            window.confirm(
+              t.sidebar.confirmDeleteFile.replace('{{title}}', title),
+            )
+          ) {
+            onDeleteNote(file.id);
+          }
         },
-        {
-          id: 'secret',
-          label: isSecret
-            ? t.sidebar.menu.fileUnsecret
-            : t.sidebar.menu.fileMakeSecret,
-        },
-        { separator: true },
-        {
-          id: 'delete',
-          label: t.sidebar.menu.fileDelete,
-          enabled: !isProtected,
-        },
-      ],
-    });
-    if (id === 'rename') onRenameNote(file.id);
-    else if (id === 'protect') onToggleProtect(file.id, !isProtected);
-    else if (id === 'secret') onToggleSecret(file.id, !isSecret);
-    else if (id === 'delete') {
-      const title = file.title || t.common.untitled;
-      if (
-        window.confirm(t.sidebar.confirmDeleteFile.replace('{{title}}', title))
-      ) {
-        onDeleteNote(file.id);
-      }
-    }
+      },
+    ];
+    setCtxMenu({ x: e.clientX, y: e.clientY, items });
   };
 
-  const openFolderMenu = async (folderPath: string, e: React.MouseEvent) => {
+  const openFolderMenu = (folderPath: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const id = await window.api.ui.showContextMenu({
-      position: { x: e.clientX, y: e.clientY },
-      items: [
-        { id: 'createNote', label: t.sidebar.menu.folderCreateNote },
-        { id: 'rename', label: t.sidebar.menu.folderRename },
-        { separator: true },
-        {
-          id: 'deleteRecursive',
-          label: t.sidebar.menu.folderDeleteRecursive,
-        },
-      ],
-    });
-    if (id === 'createNote') onCreateNoteInFolder(folderPath);
-    else if (id === 'rename') onRenameFolder(folderPath);
-    else if (id === 'deleteRecursive') onDeleteFolder(folderPath);
+    const items: ContextMenuItem[] = [
+      {
+        label: t.sidebar.menu.folderCreateNote,
+        onClick: () => onCreateNoteInFolder(folderPath),
+      },
+      {
+        label: t.sidebar.menu.folderRename,
+        onClick: () => onRenameFolder(folderPath),
+      },
+      {
+        label: 'アイコンカラー',
+        submenu: buildIconColorSubmenu(
+          folderIconColors[folderPath] ?? null,
+          (v) => onSetFolderIconColor(folderPath, v),
+        ),
+      },
+      { separator: true },
+      {
+        label: t.sidebar.menu.folderDeleteRecursive,
+        danger: true,
+        onClick: () => onDeleteFolder(folderPath),
+      },
+    ];
+    setCtxMenu({ x: e.clientX, y: e.clientY, items });
   };
 
   // ----- ドラッグ&ドロップ（ファイル / フォルダ → フォルダ移動） -----
@@ -777,7 +855,14 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
               <button
                 type="button"
                 className="sidebar__icon-btn"
-                onClick={onCreateNote}
+                onClick={() => {
+                  // インライン検索が開いていると検索フィルタで新規ノート (タイトル「無題」) が
+                  // サイドバーから隠れてしまい、アクティブ状態が視認できない。
+                  // 新規作成と同時に検索を閉じてクエリも空にする。
+                  if (inlineSearchOpen) setInlineSearchOpen(false);
+                  if (inlineSearchQuery) setInlineSearchQuery('');
+                  onCreateNote();
+                }}
                 title={t.sidebar.newNote}
                 aria-label={t.sidebar.newNote}
               >
@@ -906,6 +991,7 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
                       })()
                     : null
                 }
+                folderIconColors={folderIconColors}
               />
             )}
           </div>
@@ -1019,6 +1105,14 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
           aria-label="サイドバーの幅を変更"
         />
       )}
+      {ctxMenu && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={ctxMenu.items}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
     </aside>
   );
 });
@@ -1059,6 +1153,8 @@ interface TreeViewProps {
   currentHitId: string | null;
   /** 現在 ◀/▶ で選んでいるヒットのフォルダパス（その行をより強調する） */
   currentHitFolderPath: string | null;
+  /** フォルダパス → アイコン色 (CSS 色文字列 or null) */
+  folderIconColors: Record<string, string | null>;
 }
 
 /**
@@ -1123,6 +1219,7 @@ function TreeView({
   highlightQuery,
   currentHitId,
   currentHitFolderPath,
+  folderIconColors,
 }: TreeViewProps) {
   const t = useT();
   return (
@@ -1160,7 +1257,14 @@ function TreeView({
                   onDrop={(e) => onFolderDrop(e, node.path)}
                 >
                   <span className="tree__chevron">▶</span>
-                  <span className="tree__icon">
+                  <span
+                    className="tree__icon"
+                    style={
+                      folderIconColors[node.path]
+                        ? { color: folderIconColors[node.path] as string }
+                        : undefined
+                    }
+                  >
                     <FolderItemIcon />
                   </span>
                   <span className="tree__label">
@@ -1207,6 +1311,7 @@ function TreeView({
                   highlightQuery={highlightQuery}
                   currentHitId={currentHitId}
                   currentHitFolderPath={currentHitFolderPath}
+                  folderIconColors={folderIconColors}
                 />
               </TreeChildrenTransition>
             </li>
@@ -1270,7 +1375,10 @@ function TreeView({
               draggable
               onDragStart={(e) => onFileDragStart(e, f.id)}
             >
-              <span className="tree__icon">
+              <span
+                className="tree__icon"
+                style={f.iconColor ? { color: f.iconColor } : undefined}
+              >
                 <FileItemIcon />
               </span>
               <span className="tree__label">

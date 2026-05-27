@@ -34,7 +34,9 @@ export function initDb(): Database.Database {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       /** ゴミ箱に移動された epoch ms (NULL = 通常ノート) */
-      trashed_at INTEGER
+      trashed_at INTEGER,
+      /** サイドバーアイコンの色 (CSS 色文字列、NULL = 色なし) */
+      icon_color TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_notes_folder  ON notes(folder);
     CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at);
@@ -43,7 +45,9 @@ export function initDb(): Database.Database {
 
     CREATE TABLE IF NOT EXISTS folders (
       path       TEXT PRIMARY KEY,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      /** サイドバーアイコンの色 (CSS 色文字列、NULL = 色なし) */
+      icon_color TEXT
     );
 
     CREATE TABLE IF NOT EXISTS settings (
@@ -83,10 +87,22 @@ export function initDb(): Database.Database {
     // ゴミ箱機能用カラム (epoch ms、null = 通常ノート)
     db.exec(`ALTER TABLE notes ADD COLUMN trashed_at INTEGER`);
   }
+  if (!cols.find((c) => c.name === 'icon_color')) {
+    // サイドバーアイコンの色 (CSS 色文字列、null = 色なし)
+    db.exec(`ALTER TABLE notes ADD COLUMN icon_color TEXT`);
+  }
   // 新規 DB / 既存 DB どちらでも trashed_at が確定したあとにインデックスを作る
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_notes_trashed ON notes(trashed_at)`,
   );
+
+  // folders テーブルにも icon_color を追加 (既存 DB 向け migration)
+  const folderCols = db
+    .prepare(`PRAGMA table_info(folders)`)
+    .all() as { name: string }[];
+  if (!folderCols.find((c) => c.name === 'icon_color')) {
+    db.exec(`ALTER TABLE folders ADD COLUMN icon_color TEXT`);
+  }
 
   return db;
 }

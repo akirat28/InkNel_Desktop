@@ -388,6 +388,7 @@ export async function runSync(
             createdAt: cloud.createdAt,
             updatedAt: cloud.updatedAt,
             trashedAt: null,
+            iconColor: null,
           },
           body,
         );
@@ -416,6 +417,7 @@ export async function runSync(
               createdAt: cloud.createdAt,
               updatedAt: cloud.updatedAt,
               trashedAt: null,
+              iconColor: null,
             },
             body,
           );
@@ -555,6 +557,7 @@ export function checkAndSyncSingleNote(
           createdAt: cloudEntry.createdAt,
           updatedAt: cloudEntry.updatedAt,
           trashedAt: null,
+          iconColor: null,
         },
         body,
       );

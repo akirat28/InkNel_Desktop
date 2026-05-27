@@ -3,6 +3,15 @@ import type { NoteMeta } from './db/notes';
 
 export type { NoteMeta };
 
+/** ui:show-context-menu の renderer 側入力。submenu を持たせると hover で右に展開する。 */
+interface ContextMenuItemInput {
+  id?: string;
+  label?: string;
+  enabled?: boolean;
+  separator?: boolean;
+  submenu?: ContextMenuItemInput[];
+}
+
 contextBridge.exposeInMainWorld('api', {
   /** メインプロセスの「設定」メニュー押下を購読する。返り値は購読解除関数。 */
   onOpenPreferences(callback: () => void): () => void {
@@ -137,6 +146,12 @@ contextBridge.exposeInMainWorld('api', {
     setSecret(id: string, isSecret: boolean): Promise<NoteMeta> {
       return ipcRenderer.invoke('notes:set-secret', id, isSecret);
     },
+    setIconColor(
+      id: string,
+      iconColor: string | null,
+    ): Promise<NoteMeta | null> {
+      return ipcRenderer.invoke('notes:set-icon-color', id, iconColor);
+    },
     addLink(id: string, linkedNoteId: string): Promise<NoteMeta> {
       return ipcRenderer.invoke('notes:add-link', id, linkedNoteId);
     },
@@ -189,6 +204,12 @@ contextBridge.exposeInMainWorld('api', {
     list(): Promise<string[]> {
       return ipcRenderer.invoke('folders:list');
     },
+    listIconColors(): Promise<Record<string, string | null>> {
+      return ipcRenderer.invoke('folders:list-icon-colors');
+    },
+    syncIconColors(): Promise<Record<string, string | null>> {
+      return ipcRenderer.invoke('folders:sync-icon-colors');
+    },
     create(path: string): Promise<void> {
       return ipcRenderer.invoke('folders:create', path);
     },
@@ -200,6 +221,9 @@ contextBridge.exposeInMainWorld('api', {
     },
     rename(oldPath: string, newPath: string): Promise<void> {
       return ipcRenderer.invoke('folders:rename', oldPath, newPath);
+    },
+    setIconColor(path: string, iconColor: string | null): Promise<void> {
+      return ipcRenderer.invoke('folders:set-icon-color', path, iconColor);
     },
   },
 
@@ -364,12 +388,7 @@ contextBridge.exposeInMainWorld('api', {
      */
     showContextMenu(opts: {
       position?: { x: number; y: number };
-      items: Array<{
-        id?: string;
-        label?: string;
-        enabled?: boolean;
-        separator?: boolean;
-      }>;
+      items: ContextMenuItemInput[];
     }): Promise<string | null> {
       return ipcRenderer.invoke('ui:show-context-menu', opts);
     },

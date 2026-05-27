@@ -18,6 +18,8 @@ export interface FileItem {
   secret?: boolean;
   /** このノートから連携しているノートID一覧 */
   linkedNoteIds?: string[];
+  /** サイドバーアイコンの色 (CSS 色文字列、null = 色なし) */
+  iconColor?: string | null;
 }
 
 export interface TreeFolderNode {

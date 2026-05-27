@@ -157,6 +157,10 @@ export default function App() {
   // ゴミ箱内ノート (notes とは別管理。Sidebar の「ゴミ箱」セクションに表示)
   const [trashedNotes, setTrashedNotes] = useState<NoteMeta[]>([]);
   const [folders, setFolders] = useState<string[]>([]);
+  // フォルダパス → アイコン色 (CSS 文字列 or null)。Sidebar のフォルダアイコン描画に使う。
+  const [folderIconColors, setFolderIconColors] = useState<
+    Record<string, string | null>
+  >({});
   const [activeId, setActiveId] = useState<string | null>(null);
   const [body, setBody] = useState<string>('');
   const [editingTitle, setEditingTitle] = useState<string>('');
@@ -1015,15 +1019,20 @@ export default function App() {
         }
         return;
       }
-      const [list, trashed, folderList, rawSettings] = await Promise.all([
-        window.api.notes.list(),
-        window.api.notes.listTrashed(),
-        window.api.folders.list(),
-        window.api.settings.getAll(),
-      ]);
+      const [list, trashed, folderList, folderColors, rawSettings] =
+        await Promise.all([
+          window.api.notes.list(),
+          window.api.notes.listTrashed(),
+          window.api.folders.list(),
+          // 共有 folders.json と DB をマージしてから返してもらう
+          // (他デバイスでの色変更があれば起動時に反映)
+          window.api.folders.syncIconColors(),
+          window.api.settings.getAll(),
+        ]);
       setNotes(list);
       setTrashedNotes(trashed);
       setFolders(folderList);
+      setFolderIconColors(folderColors);
       const parsed = parseSettings(rawSettings);
       setSettings(parsed);
       // 永続化されたサイドバー幅を反映
@@ -1153,13 +1162,18 @@ export default function App() {
           if (diffCount > 0) {
             await window.api.storage.sync();
             // 取り込みでノートが増えた / メタが変わった可能性があるので
-            // notes / folders を取り直して画面に反映する
-            const [refreshedNotes, refreshedFolders] = await Promise.all([
-              window.api.notes.list(),
-              window.api.folders.list(),
-            ]);
+            // notes / folders と folderIconColors を取り直して画面に反映する。
+            // storage:sync 内で folders.json ↔ DB の merge も走っているので
+            // ここでは listIconColors で十分 (再度の merge は不要)。
+            const [refreshedNotes, refreshedFolders, refreshedColors] =
+              await Promise.all([
+                window.api.notes.list(),
+                window.api.folders.list(),
+                window.api.folders.listIconColors(),
+              ]);
             setNotes(refreshedNotes);
             setFolders(refreshedFolders);
+            setFolderIconColors(refreshedColors);
             // 現在開いているアクティブノートが更新されていれば本文も再読み込み
             if (activeId) {
               try {
@@ -1574,6 +1588,11 @@ export default function App() {
     if (created.folder) {
       sidebarRef.current?.expandFolder(created.folder);
     }
+    // 上の state 更新で view=edit の Editor がマウント (もしくは body 切替) されるので、
+    // 1 フレーム待ってから focus を当てる (即時呼び出しでは EditorView がまだ無いことがある)。
+    requestAnimationFrame(() => {
+      editorRef.current?.focus();
+    });
   };
 
   // ヘッダ「+ 新規ノート」やショートカット (⌘N) から: 常に **最上位階層** に作成。
@@ -3309,6 +3328,18 @@ export default function App() {
           onDeleteNote={(id) => void handleDeleteNote(id)}
           onToggleProtect={(id, next) => void handleToggleProtect(id, next)}
           onToggleSecret={(id, next) => void handleToggleSecret(id, next)}
+          onSetNoteIconColor={(id, color) => {
+            // 即時 UI 反映 (バックエンドからの返り値待ちで遅延しないように)
+            setNotes((prev) =>
+              prev.map((n) => (n.id === id ? { ...n, iconColor: color } : n)),
+            );
+            void window.api.notes.setIconColor(id, color);
+          }}
+          onSetFolderIconColor={(path, color) => {
+            setFolderIconColors((prev) => ({ ...prev, [path]: color }));
+            void window.api.folders.setIconColor(path, color);
+          }}
+          folderIconColors={folderIconColors}
           onSearch={handleSearch}
           searchHistory={searchHistory}
           onAddSearchHistory={handleAddSearchHistory}

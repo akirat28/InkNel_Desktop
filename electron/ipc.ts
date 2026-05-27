@@ -6,7 +6,17 @@ import {
   BrowserWindow,
   Menu,
   nativeTheme,
+  type MenuItemConstructorOptions,
 } from 'electron';
+
+/** ui:show-context-menu の renderer 側入力。submenu で hover 展開を表現できる */
+interface ContextMenuItemInput {
+  id?: string;
+  label?: string;
+  enabled?: boolean;
+  separator?: boolean;
+  submenu?: ContextMenuItemInput[];
+}
 import {
   copyFileSync,
   cpSync,
@@ -34,6 +44,7 @@ import {
   updateNoteBodyText,
   setNoteProtected,
   setNoteSecret,
+  setNoteIconColor,
   addNoteLink,
   removeNoteLink,
   deleteNote,
@@ -51,6 +62,7 @@ import {
   deleteFolder,
   deleteFolderRecursive,
   renameFolder,
+  setFolderIconColor,
 } from './db/folders';
 import { getAllSettings, setSetting } from './db/settings';
 import {
@@ -62,6 +74,10 @@ import {
   writeTombstone,
   isTombstoneMeta,
 } from './storage/notesFiles';
+import {
+  readFolderColors,
+  writeFolderColors,
+} from './storage/foldersFile';
 import {
   saveImage,
   imageExists,
@@ -1473,6 +1489,7 @@ export function registerIpc(): void {
         createdAt: now,
         updatedAt: now,
         trashedAt: null,
+        iconColor: null,
       };
       insertNote(meta, input.body ?? '');
       writeNoteFile(meta, input.body ?? '');
@@ -1547,6 +1564,24 @@ export function registerIpc(): void {
         writeNoteFile(updated, body);
       } catch (err) {
         console.warn('[notes:set-secret] disk rewrite failed:', err);
+      }
+      const p = getActiveShareProvider();
+      if (p !== 'none') pushSingleNote(p, id);
+      return updated;
+    },
+  );
+
+  ipcMain.handle(
+    'notes:set-icon-color',
+    (_e, id: string, iconColor: string | null): NoteMeta | null => {
+      const updated = setNoteIconColor(id, iconColor);
+      if (!updated) return null;
+      // front-matter にも書き込んで他デバイスへ同期
+      try {
+        const body = readBody(id);
+        writeNoteFile(updated, body);
+      } catch (err) {
+        console.warn('[notes:set-icon-color] disk rewrite failed:', err);
       }
       const p = getActiveShareProvider();
       if (p !== 'none') pushSingleNote(p, id);
@@ -1729,9 +1764,71 @@ export function registerIpc(): void {
   });
 
   // ----- folders -----
+  // 既存呼び出し元 (App.tsx の string[] state) を壊さないため、`folders:list` は
+  // 引き続き string[] を返す。アイコン色は別 API で Record として 1 度に取れるようにする。
   ipcMain.handle('folders:list', (): string[] => {
-    return listFolders();
+    return listFolders().map((f) => f.path);
   });
+
+  ipcMain.handle(
+    'folders:list-icon-colors',
+    (): Record<string, string | null> => {
+      const out: Record<string, string | null> = {};
+      for (const f of listFolders()) out[f.path] = f.iconColor;
+      return out;
+    },
+  );
+
+  /**
+   * 共有 folders.json と DB を merge して最新の色 Map を返す。
+   * 起動時に呼ぶことで他デバイスからの色変更を取り込める。
+   *  - 共有にあれば共有を勝ちにして DB を上書き (= 他デバイスの最新が反映)
+   *  - DB にあって共有に無いものは共有に書き出し (= このデバイスから伝播)
+   *  - 競合はタイムスタンプ無しの簡素設計で「共有優先」
+   */
+  ipcMain.handle(
+    'folders:sync-icon-colors',
+    (): Record<string, string | null> => {
+      try {
+        const sharedColors = readFolderColors();
+        const dbList = listFolders();
+        const merged: Record<string, string | null> = { ...sharedColors };
+        for (const f of dbList) {
+          if (!(f.path in sharedColors)) merged[f.path] = f.iconColor;
+        }
+        // 共有値で DB を上書き
+        for (const [path, color] of Object.entries(sharedColors)) {
+          setFolderIconColor(path, color);
+        }
+        // 共有に書き戻し
+        writeFolderColors(merged);
+      } catch (err) {
+        console.warn('[folders:sync-icon-colors] failed:', err);
+      }
+      const out: Record<string, string | null> = {};
+      for (const f of listFolders()) out[f.path] = f.iconColor;
+      return out;
+    },
+  );
+
+  ipcMain.handle(
+    'folders:set-icon-color',
+    (_e, path: string, iconColor: string | null): void => {
+      const normalized = normalizeFolderPath(path);
+      if (!normalized) return;
+      setFolderIconColor(normalized, iconColor);
+      // 共有ディスク (storage root 直下) に folders.json として書き出して
+      // 他デバイスへ色変更を伝播する。null も保存するのは「色なしに戻された」を
+      // 他デバイスにも伝えるため。
+      try {
+        const all = readFolderColors();
+        all[normalized] = iconColor;
+        writeFolderColors(all);
+      } catch (err) {
+        console.warn('[folders:set-icon-color] write folders.json failed:', err);
+      }
+    },
+  );
 
   ipcMain.handle('folders:create', (_e, path: string): void => {
     const normalized = normalizeFolderPath(path);
@@ -2269,6 +2366,7 @@ export function registerIpc(): void {
             createdAt: meta.createdAt ?? diskUpdated,
             updatedAt: diskUpdated,
             trashedAt: null,
+            iconColor: meta.iconColor ?? null,
           };
           // 'missing' / 'newer' どちらも冪等な upsert で処理する。
           // buildSyncPlan は実行開始時点のスナップショットなので、
@@ -2299,6 +2397,32 @@ export function registerIpc(): void {
             err,
           );
         }
+      }
+
+      // ----- フォルダのアイコン色を共有ディスクと同期 -----
+      // folders.json (= 共有) と DB の folders.icon_color を merge:
+      //   - 共有にあって DB と異なる → DB に取り込み (他デバイスの変更を反映)
+      //   - DB にあって共有に無い   → 共有に書き出し (このデバイスから他へ伝播)
+      // 競合 (両方更新) はタイムスタンプを持たない簡素設計なので「共有優先」。
+      try {
+        const sharedColors = readFolderColors();
+        const dbList = listFolders();
+        const merged: Record<string, string | null> = { ...sharedColors };
+        for (const f of dbList) {
+          if (f.iconColor === null && !(f.path in sharedColors)) continue;
+          if (!(f.path in sharedColors)) {
+            // 共有に無いものは DB → 共有
+            merged[f.path] = f.iconColor;
+          }
+        }
+        // 共有値で DB を更新 (共有優先)
+        for (const [path, color] of Object.entries(sharedColors)) {
+          setFolderIconColor(path, color);
+        }
+        // 共有に書き戻し (merged を全置換)
+        writeFolderColors(merged);
+      } catch (err) {
+        console.warn('[storage:sync] folder color sync failed:', err);
       }
 
       // 同期完了時刻を保存
@@ -2405,8 +2529,8 @@ export function registerIpc(): void {
    * 渡すと、ネイティブメニュー（ウィンドウ外まではみ出せる）を popup し、
    * 選択された項目の `id` を返す。キャンセル時は null。
    *
-   * 各 item は `{ id, label, enabled?, danger?, separator? }`。
-   * separator: true なら区切り線（id / label は無視）。
+   * 各 item は `{ id, label, enabled?, separator?, submenu? }`。
+   * separator: true なら区切り線、submenu に子配列を入れると hover で展開する。
    */
   ipcMain.handle(
     'ui:show-context-menu',
@@ -2414,12 +2538,7 @@ export function registerIpc(): void {
       event,
       opts: {
         position?: { x?: number; y?: number };
-        items: Array<{
-          id?: string;
-          label?: string;
-          enabled?: boolean;
-          separator?: boolean;
-        }>;
+        items: ContextMenuItemInput[];
       },
     ): Promise<string | null> => {
       const win = BrowserWindow.fromWebContents(event.sender);
@@ -2431,18 +2550,31 @@ export function registerIpc(): void {
           resolve(v);
         };
 
-        const template = (opts.items || []).map((item) => {
-          if (item.separator) {
-            return { type: 'separator' as const };
-          }
-          return {
-            label: item.label ?? '',
-            enabled: item.enabled !== false,
-            click: () => safeResolve(item.id ?? null),
-          };
-        });
+        // 再帰的に MenuItemConstructorOptions を組み立てる。
+        // 子配列を持つ item は「サブメニュー (hover で右に展開)」となり、
+        // ノート/フォルダの「アイコンカラー」のようなネスト UI に使う。
+        const build = (
+          items: ContextMenuItemInput[],
+        ): MenuItemConstructorOptions[] =>
+          (items || []).map((item) => {
+            if (item.separator) {
+              return { type: 'separator' as const };
+            }
+            if (item.submenu && item.submenu.length > 0) {
+              return {
+                label: item.label ?? '',
+                enabled: item.enabled !== false,
+                submenu: build(item.submenu),
+              };
+            }
+            return {
+              label: item.label ?? '',
+              enabled: item.enabled !== false,
+              click: () => safeResolve(item.id ?? null),
+            };
+          });
 
-        const menu = Menu.buildFromTemplate(template);
+        const menu = Menu.buildFromTemplate(build(opts.items || []));
         const x = opts.position?.x;
         const y = opts.position?.y;
         menu.popup({
@@ -3394,6 +3526,7 @@ export function registerIpc(): void {
             createdAt: meta.createdAt ?? diskUpdated,
             updatedAt: diskUpdated,
             trashedAt: null,
+            iconColor: meta.iconColor ?? null,
           };
           upsertNoteFromSyncWithBody(noteMeta, body);
           imported++;

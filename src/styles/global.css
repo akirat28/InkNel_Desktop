@@ -2553,6 +2553,7 @@ body,
   flex-direction: column;
 }
 
+
 /* 左側の三角ポインタ（吹き出しの突起）。ボーダー付きで二重描画。 */
 .ctx-menu::before {
   content: '';
@@ -2607,6 +2608,40 @@ body,
 }
 
 .ctx-menu__item:hover .ctx-menu__icon {
+  color: var(--fg);
+}
+
+/* アイコンカラーの ● を ctx-menu__icon 内に置いた時の見た目調整。
+   CSS の `color: <hex>` で着色されたフォント文字 (● / ○) として描画する。 */
+.ctx-color-dot {
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1;
+}
+.ctx-color-dot.is-none {
+  color: var(--fg-muted);
+}
+
+/* 「アイコンカラー」のサブメニュー (色の選択肢) は項目数が多いので行間を詰める。
+   通常メニューの 8px 縦余白を 3px に圧縮して、9 行全部がコンパクトに収まるようにする。 */
+.ctx-menu--submenu {
+  padding: 3px 0;
+}
+.ctx-menu--submenu .ctx-menu__item {
+  padding: 3px 14px;
+}
+
+/* submenu 付き項目の右端に出すシェブロン (▸) */
+.ctx-menu__chevron {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  line-height: 1;
+}
+.ctx-menu__item.has-submenu:hover .ctx-menu__chevron {
   color: var(--fg);
 }
 

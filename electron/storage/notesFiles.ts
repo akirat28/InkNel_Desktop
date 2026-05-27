@@ -138,6 +138,7 @@ export function writeNoteFile(meta: NoteMeta, body: string): void {
     secret: meta.secret,
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
+    iconColor: meta.iconColor ?? null,
   };
   const full = serializeFrontMatter(fm, body);
   writeFileSync(notePath(meta.id), full, 'utf-8');

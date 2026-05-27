@@ -6,6 +6,15 @@ import type { NoteMeta } from '../electron/db/notes';
 
 export type { NoteMeta };
 
+/** ui.showContextMenu の項目。submenu を与えると hover で右に展開する */
+export interface ContextMenuItemInput {
+  id?: string;
+  label?: string;
+  enabled?: boolean;
+  separator?: boolean;
+  submenu?: ContextMenuItemInput[];
+}
+
 export interface NotesApi {
   list(): Promise<NoteMeta[]>;
   create(input: {
@@ -21,6 +30,8 @@ export interface NotesApi {
   updateBody(id: string, body: string): Promise<void>;
   setProtected(id: string, isProtected: boolean): Promise<NoteMeta>;
   setSecret(id: string, isSecret: boolean): Promise<NoteMeta>;
+  /** ノートのサイドバーアイコン色を更新 (null = 色なし) */
+  setIconColor(id: string, iconColor: string | null): Promise<NoteMeta | null>;
   addLink(id: string, linkedNoteId: string): Promise<NoteMeta>;
   removeLink(id: string, linkedNoteId: string): Promise<NoteMeta>;
   search(query: string): Promise<NoteMeta[]>;
@@ -48,12 +59,21 @@ export interface NotesApi {
 
 export interface FoldersApi {
   list(): Promise<string[]>;
+  /** フォルダパス → アイコン色 (CSS 文字列 or null) の Map (DB から読むだけ) */
+  listIconColors(): Promise<Record<string, string | null>>;
+  /**
+   * 共有 folders.json と DB を merge してから最新マップを返す。
+   * 起動時/手動同期時に呼ぶことで他デバイスからの色変更を取り込む。
+   */
+  syncIconColors(): Promise<Record<string, string | null>>;
   create(path: string): Promise<void>;
   delete(path: string): Promise<void>;
   /** フォルダを配下のノート・サブフォルダごと丸ごと削除 */
   deleteRecursive(path: string): Promise<{ deletedCount: number }>;
   /** フォルダパスを書き換え。配下の全ノートと全サブフォルダを一括更新 */
   rename(oldPath: string, newPath: string): Promise<void>;
+  /** フォルダのサイドバーアイコン色を更新 (null = 色なし) */
+  setIconColor(path: string, iconColor: string | null): Promise<void>;
 }
 
 export interface SettingsApi {
@@ -187,12 +207,7 @@ export interface UiApi {
    */
   showContextMenu(opts: {
     position?: { x: number; y: number };
-    items: Array<{
-      id?: string;
-      label?: string;
-      enabled?: boolean;
-      separator?: boolean;
-    }>;
+    items: ContextMenuItemInput[];
   }): Promise<string | null>;
   /** OS ネイティブのノート操作メニューを指定位置にポップアップする */
   showNoteMenu(position: {

@@ -163,18 +163,22 @@ describe('notes DB', () => {
 });
 
 describe('folders DB', () => {
+  // listFolders() の戻り値は `Array<{ path; iconColor }>` (iconColor 追加後)。
+  // 旧テストは string[] 比較だったので、path だけ取り出して比較に揃える。
+  const paths = (fs: ReturnType<typeof listFolders>) => fs.map((f) => f.path);
+
   test('insertFolder + listFolders', () => {
     insertFolder('a');
     insertFolder('a/b');
     insertFolder('c');
-    expect(listFolders()).toEqual(['a', 'a/b', 'c']);
+    expect(paths(listFolders())).toEqual(['a', 'a/b', 'c']);
   });
 
   test('deleteFolder は単一パスだけ削除', () => {
     insertFolder('x');
     insertFolder('x/y');
     deleteFolder('x');
-    expect(listFolders()).toEqual(['x/y']);
+    expect(paths(listFolders())).toEqual(['x/y']);
   });
 
   test('renameFolder はサブフォルダと配下ノートも更新', () => {
@@ -186,7 +190,7 @@ describe('folders DB', () => {
 
     renameFolder('old', 'new');
 
-    expect(listFolders().sort()).toEqual(['new', 'new/sub']);
+    expect(paths(listFolders()).sort()).toEqual(['new', 'new/sub']);
     expect(getNote('n1')?.folder).toBe('new');
     expect(getNote('n2')?.folder).toBe('new/sub');
     expect(getNote('n3')?.folder).toBe('other');
@@ -202,7 +206,7 @@ describe('folders DB', () => {
     const ids = deleteFolderRecursive('drop');
 
     expect(ids.sort()).toEqual(['a', 'b']);
-    expect(listFolders()).toEqual([]);
+    expect(paths(listFolders())).toEqual([]);
     expect(getNote('a')).toBeNull();
     expect(getNote('b')).toBeNull();
     expect(getNote('c')).not.toBeNull();
@@ -214,7 +218,7 @@ describe('folders DB', () => {
     expect(() => deleteFolderRecursive('locked')).toThrow();
     // ロールバック確認: ノートもフォルダも残っている
     expect(getNote('p')).not.toBeNull();
-    expect(listFolders()).toEqual(['locked']);
+    expect(paths(listFolders())).toEqual(['locked']);
   });
 });
 

@@ -43,6 +43,11 @@ export interface NoteFrontMatter {
   deleted?: boolean;
   /** Tombstone がいつ作られたか (ms epoch) */
   deletedAt?: number;
+  /**
+   * サイドバーのアイコンに着色する CSS 色文字列 (例: '#FF3B30')。
+   * null / 未定義は「色なし (アクセント色フォールバック)」を意味する。
+   */
+  iconColor?: string | null;
 }
 
 // 閉じ `---` の後の改行と、続く空行（区切りの慣例）を 1 行ぶんまで吸収する。
@@ -111,6 +116,8 @@ export function serializeFrontMatter(
     lines.push(`deleted: ${meta.deleted ? 'true' : 'false'}`);
   if (meta.deletedAt !== undefined)
     lines.push(`deleted_at: ${meta.deletedAt}`);
+  if (meta.iconColor !== undefined && meta.iconColor !== null)
+    lines.push(`icon_color: ${escapeYaml(meta.iconColor)}`);
   lines.push('---');
   // 本文との間に必ず 1 空行を入れる（先頭が空行で始まっていれば追加しない）
   const sep = body.startsWith('\n') ? '' : '\n';
@@ -223,6 +230,11 @@ function parseMiniYaml(yaml: string): NoteFrontMatter {
         if (Number.isFinite(n)) meta.deletedAt = n;
         break;
       }
+      case 'icon_color':
+      case 'iconColor':
+        // 空文字は「色なし」とみなして null に正規化
+        meta.iconColor = value.length > 0 ? value : null;
+        break;
       default:
         // 未知のキーは無視
         break;
