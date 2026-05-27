@@ -2575,12 +2575,14 @@ export function registerIpc(): void {
           });
 
         const menu = Menu.buildFromTemplate(build(opts.items || []));
-        const x = opts.position?.x;
-        const y = opts.position?.y;
+        // x / y は **渡さない**。
+        // 渡すと macOS では「window 内座標」と「screen 座標」の解釈差が出て、
+        // dev (frameless 想定の小窓) と本番 (title bar 込みの通常ウィンドウ) で
+        // y が title bar 高さぶんずれる現象が発生する (= 本番でマウス位置より
+        // かなり上にメニューが出る原因)。
+        // 引数を省略すれば Electron が標準でカーソル位置に開いてくれる。
         menu.popup({
           window: win ?? undefined,
-          x: typeof x === 'number' ? Math.round(x) : undefined,
-          y: typeof y === 'number' ? Math.round(y) : undefined,
           callback: () => safeResolve(null),
         });
       });

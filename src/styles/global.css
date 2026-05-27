@@ -2588,7 +2588,9 @@ body,
   background: transparent;
   color: var(--fg);
   border: none;
-  padding: 8px 14px;
+  /* 上下を詰めて視覚的にまとまり良く (8px → 5px)。
+     submenu (色リスト) は別途 3px までさらに詰めている。 */
+  padding: 5px 14px;
   font-size: 13px;
   font-family: inherit;
   cursor: pointer;
