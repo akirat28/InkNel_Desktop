@@ -112,6 +112,17 @@ function buildTableMarkdown(rows: number, cols: number): string {
 }
 
 /**
+ * プラグイン由来ツールバーボタンの id → 略号ラベル。
+ * アイコンが似ていて判別しづらいので、アイコンの隣に短い識別子を出す。
+ * (Mermaid=MMD / Schedule=SCH / Mindmap=MMP。Template=TPL は本体ボタンで別途指定)
+ */
+const PLUGIN_TOOLBAR_TAGS: Record<string, string> = {
+  'mermaid-insert': 'MMD',
+  'schedule-insert': 'SCH',
+  'mindmap-insert': 'MMP',
+};
+
+/**
  * 編集ビュー時の上部に表示するマークダウン挿入ツールバー。
  * 編集/プレビューの切替は NoteHeader 側のセグメントトグルが担当する。
  */
@@ -399,6 +410,7 @@ export default function EditorToolbar({
         </ToolBtn>
         <ToolBtn label="テンプレート挿入" onClick={openTemplatePicker}>
           <TemplateIcon />
+          <span className="md-toolbar__btn-tag">TPL</span>
         </ToolBtn>
       </div>
 
@@ -407,19 +419,25 @@ export default function EditorToolbar({
         <>
           <div className="md-toolbar__divider" />
           <div className="md-toolbar__group">
-            {pluginToolbarButtons.map((btn) => (
-              <ToolBtn
-                key={btn.id}
-                label={btn.label}
-                onClick={() => btn.onClick(toolbarApi)}
-              >
-                <span
-                  className="md-toolbar__plugin-icon"
-                  dangerouslySetInnerHTML={{ __html: btn.icon }}
-                  aria-hidden="true"
-                />
-              </ToolBtn>
-            ))}
+            {pluginToolbarButtons.map((btn) => {
+              const tag = PLUGIN_TOOLBAR_TAGS[btn.id];
+              return (
+                <ToolBtn
+                  key={btn.id}
+                  label={btn.label}
+                  onClick={() => btn.onClick(toolbarApi)}
+                >
+                  <span
+                    className="md-toolbar__plugin-icon"
+                    dangerouslySetInnerHTML={{ __html: btn.icon }}
+                    aria-hidden="true"
+                  />
+                  {tag && (
+                    <span className="md-toolbar__btn-tag">{tag}</span>
+                  )}
+                </ToolBtn>
+              );
+            })}
           </div>
         </>
       )}

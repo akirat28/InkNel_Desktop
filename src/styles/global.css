@@ -2588,9 +2588,9 @@ body,
   background: transparent;
   color: var(--fg);
   border: none;
-  /* 上下を詰めて視覚的にまとまり良く (8px → 5px)。
-     submenu (色リスト) は別途 3px までさらに詰めている。 */
-  padding: 5px 14px;
+  /* 上下を詰めて視覚的にまとまり良く (8px → 3px)。
+     親メニューと submenu (色リスト) を同じ縦余白に揃える。 */
+  padding: 3px 14px;
   font-size: 13px;
   font-family: inherit;
   cursor: pointer;
@@ -4084,6 +4084,20 @@ body,
   align-items: center;
   justify-content: center;
   line-height: 0;
+}
+
+/* アイコンの右に出す識別用の略号 (MMD / SCH / MMP / TPL)。
+   似たアイコンを区別しやすくする。 */
+.md-toolbar__btn-tag {
+  margin-left: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  opacity: 0.75;
+}
+.md-toolbar__btn:hover .md-toolbar__btn-tag {
+  opacity: 1;
 }
 
 
@@ -5814,6 +5828,44 @@ body,
   left: 4px;
   width: 4px;
   height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* 表セル内のチェックボックス。ビュー画面からクリックでトグル可能。
+   task-list-checkbox のスタイルを踏襲。 */
+.preview .task-cell-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  vertical-align: -2px;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+  display: inline-block;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+.preview .task-cell-checkbox:hover {
+  border-color: var(--accent);
+}
+.preview .task-cell-checkbox:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.preview .task-cell-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 4px;
+  width: 3.5px;
+  height: 7.5px;
   border: solid #fff;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);

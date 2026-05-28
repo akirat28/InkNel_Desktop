@@ -105,8 +105,14 @@ function slugifyForAnchor(text: string): string {
 }
 
 /**
- * 本文中の N 番目のタスクリスト行（`- [ ]` / `- [x]`）の状態をトグルした
- * 新しい本文文字列を返す。コードブロック内は無視。
+ * 本文中の N 番目のチェックボックスの状態をトグルした新しい本文を返す。
+ * 対象は「リスト項目の行頭 `- [ ]`」と「表セル内の `[ ]` / `[x]`」の両方で、
+ * markdown-it 側の data-task-index 採番 (文書順: 行順 + 行内左→右) と一致させる。
+ * コードブロック内は無視。
+ *
+ * 採番ルール (renderer の markdown-it task-list ルールと厳密に揃えること):
+ *  - リスト項目行: 行頭の `[ ]` 1 個だけをカウント
+ *  - 表の行 (区切り行 `|---|` を除く): 行内に現れる `[ ]` / `[x]` を左から順にカウント
  */
 function toggleTaskInBody(body: string, taskIndex: number): string {
   const lines = body.split('\n');
@@ -119,20 +125,42 @@ function toggleTaskInBody(body: string, taskIndex: number): string {
       continue;
     }
     if (inCode) continue;
-    // リスト記号 + " [x] " or " [ ] " のパターン
-    const m = /^(\s*(?:[-*+]|\d+\.)\s+)\[([ xX])\](\s)/.exec(line);
-    if (!m) continue;
-    if (count === taskIndex) {
-      const newChar = m[2].toLowerCase() === 'x' ? ' ' : 'x';
-      lines[i] =
-        line.slice(0, m[1].length) +
-        '[' +
-        newChar +
-        ']' +
-        line.slice(m[1].length + 3);
-      return lines.join('\n');
+
+    // 1) リスト項目の行頭 `- [ ]` / `- [x]`
+    const listM = /^(\s*(?:[-*+]|\d+\.)\s+)\[([ xX])\](\s)/.exec(line);
+    if (listM) {
+      if (count === taskIndex) {
+        const newChar = listM[2].toLowerCase() === 'x' ? ' ' : 'x';
+        lines[i] =
+          line.slice(0, listM[1].length) +
+          '[' +
+          newChar +
+          ']' +
+          line.slice(listM[1].length + 3);
+        return lines.join('\n');
+      }
+      count++;
+      continue; // リスト行は行頭 1 個だけ。表セル走査は行わない
     }
-    count++;
+
+    // 2) 表の行 (パイプを含む)。区切り行 `|---|:--:|` は対象外
+    if (line.includes('|') && !/^\s*\|?[\s:|-]+\|?\s*$/.test(line)) {
+      const re = /\[([ xX])\]/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(line)) !== null) {
+        if (count === taskIndex) {
+          const newChar = m[1].toLowerCase() === 'x' ? ' ' : 'x';
+          lines[i] =
+            line.slice(0, m.index) +
+            '[' +
+            newChar +
+            ']' +
+            line.slice(m.index + m[0].length);
+          return lines.join('\n');
+        }
+        count++;
+      }
+    }
   }
   return body;
 }
@@ -357,62 +385,125 @@ const Preview = forwardRef<PreviewHandle, Props>(function Preview(
       );
     };
 
-    // ----- タスクリスト変換 -----
-    // list_item_open に続く inline トークンの content 先頭が `[ ]` / `[x]` の場合、
-    // それを <input type="checkbox"> に置き換え、トラッキング用の data-task-index を付与する。
+    // ----- タスクリスト変換 (リスト項目 + 表セル) -----
+    // 文書順 (token 順) に走査して data-task-index を通し採番する。
+    //  - リスト項目: inline content 先頭の `[ ]` / `[x]` 1 個を checkbox 化
+    //  - 表セル (td/th 内): セル内に現れる `[ ]` / `[x]` を全て checkbox 化
+    // toggleTaskInBody 側の採番順と厳密に一致させること (行順 + 行内左→右)。
     instance.core.ruler.after('inline', 'task-list', (state) => {
-      let taskIdx = 0;
       const tokens = state.tokens;
-      for (let i = 0; i < tokens.length; i++) {
-        if (tokens[i].type !== 'list_item_open') continue;
+      let taskIdx = 0;
+      let cellDepth = 0;
+      let listItemOpenIdx = -1;
 
-        // list_item_open の直後にある inline トークンを探す
-        // 通常は list_item_open → paragraph_open → inline → ...
-        let inlineToken = null;
-        for (let j = i + 1; j < tokens.length; j++) {
-          if (tokens[j].type === 'list_item_close') break;
-          if (tokens[j].type === 'inline') {
-            inlineToken = tokens[j];
-            break;
+      // 表セル内 inline の children を走査して `[ ]` / `[x]` を checkbox 化。
+      // state.Token を closure で参照することで markdown-it の型を維持する。
+      const convertCell = (
+        inlineToken: (typeof tokens)[number],
+        startIdx: number,
+      ): number => {
+        let idx = startIdx;
+        const children = inlineToken.children;
+        if (!children || children.length === 0) return idx;
+        const out: typeof children = [];
+        const re = /\[([ xX])\]/g;
+        for (const child of children) {
+          if (child.type !== 'text') {
+            out.push(child);
+            continue;
+          }
+          const text = child.content;
+          re.lastIndex = 0;
+          let last = 0;
+          let m: RegExpExecArray | null;
+          let matched = false;
+          while ((m = re.exec(text)) !== null) {
+            matched = true;
+            if (m.index > last) {
+              const t = new state.Token('text', '', 0);
+              t.content = text.slice(last, m.index);
+              out.push(t);
+            }
+            const checked = m[1].toLowerCase() === 'x';
+            const cb = new state.Token('html_inline', '', 0);
+            cb.content =
+              `<input type="checkbox" class="task-cell-checkbox"` +
+              ` data-task-index="${idx}"` +
+              (checked ? ' checked' : '') +
+              `>`;
+            out.push(cb);
+            idx++;
+            last = m.index + m[0].length;
+          }
+          if (matched) {
+            if (last < text.length) {
+              const t = new state.Token('text', '', 0);
+              t.content = text.slice(last);
+              out.push(t);
+            }
+          } else {
+            out.push(child);
           }
         }
-        if (!inlineToken) continue;
+        inlineToken.children = out;
+        return idx;
+      };
 
-        const m = /^\[([ xX])\]\s+/.exec(inlineToken.content);
-        if (!m) continue;
+      for (let i = 0; i < tokens.length; i++) {
+        const tk = tokens[i];
+        if (tk.type === 'td_open' || tk.type === 'th_open') {
+          cellDepth++;
+          continue;
+        }
+        if (tk.type === 'td_close' || tk.type === 'th_close') {
+          if (cellDepth > 0) cellDepth--;
+          continue;
+        }
+        if (tk.type === 'list_item_open') {
+          listItemOpenIdx = i;
+          continue;
+        }
+        if (tk.type === 'list_item_close') {
+          listItemOpenIdx = -1;
+          continue;
+        }
+        if (tk.type !== 'inline') continue;
 
-        const checked = m[1].toLowerCase() === 'x';
-        const idx = taskIdx++;
-        const stripLen = m[0].length;
-
-        // list_item_open に class を追加（CSS でリストマーカーを消すため）
-        tokens[i].attrJoin('class', 'task-list-item');
-
-        // inline.content から先頭のマーカー部分を除去
-        inlineToken.content = inlineToken.content.slice(stripLen);
-
-        // children の text トークンの先頭からも同じ長さだけ除去
-        if (inlineToken.children && inlineToken.children.length > 0) {
-          let remaining = stripLen;
-          for (const child of inlineToken.children) {
-            if (remaining <= 0) break;
-            if (child.type === 'text') {
-              const cut = Math.min(remaining, child.content.length);
-              child.content = child.content.slice(cut);
-              remaining -= cut;
-            } else {
-              break;
+        if (cellDepth > 0) {
+          // 表セル内: 全 `[ ]` / `[x]` を checkbox 化
+          taskIdx = convertCell(tk, taskIdx);
+        } else if (listItemOpenIdx >= 0) {
+          // リスト項目の最初の inline: 行頭の `[ ]` のみ
+          const m = /^\[([ xX])\]\s+/.exec(tk.content);
+          if (m) {
+            const checked = m[1].toLowerCase() === 'x';
+            const idx = taskIdx++;
+            const stripLen = m[0].length;
+            tokens[listItemOpenIdx].attrJoin('class', 'task-list-item');
+            tk.content = tk.content.slice(stripLen);
+            if (tk.children && tk.children.length > 0) {
+              let remaining = stripLen;
+              for (const child of tk.children) {
+                if (remaining <= 0) break;
+                if (child.type === 'text') {
+                  const cut = Math.min(remaining, child.content.length);
+                  child.content = child.content.slice(cut);
+                  remaining -= cut;
+                } else {
+                  break;
+                }
+              }
+              const checkbox = new state.Token('html_inline', '', 0);
+              checkbox.content =
+                `<input type="checkbox" class="task-list-checkbox"` +
+                ` data-task-index="${idx}"` +
+                (checked ? ' checked' : '') +
+                `>`;
+              tk.children.unshift(checkbox);
             }
           }
-
-          // 先頭にチェックボックスの html_inline トークンを差し込む
-          const checkbox = new state.Token('html_inline', '', 0);
-          checkbox.content =
-            `<input type="checkbox" class="task-list-checkbox"` +
-            ` data-task-index="${idx}"` +
-            (checked ? ' checked' : '') +
-            `>`;
-          inlineToken.children.unshift(checkbox);
+          // リスト項目につき最初の inline だけ処理
+          listItemOpenIdx = -1;
         }
       }
     });
@@ -490,10 +581,11 @@ const Preview = forwardRef<PreviewHandle, Props>(function Preview(
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
 
-    // -1) タスクリストのチェックボックス: 本文側をトグルして再描画させる
+    // -1) タスクリスト / 表セルのチェックボックス: 本文側をトグルして再描画させる
     if (
       target instanceof HTMLInputElement &&
-      target.classList.contains('task-list-checkbox')
+      (target.classList.contains('task-list-checkbox') ||
+        target.classList.contains('task-cell-checkbox'))
     ) {
       const indexAttr = target.getAttribute('data-task-index');
       if (indexAttr !== null && onChange) {
