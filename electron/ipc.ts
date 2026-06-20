@@ -39,6 +39,7 @@ import {
   listNotes,
   listTrashedNotes,
   getNote,
+  getNoteBody,
   insertNote,
   updateNoteMeta,
   updateNoteBodyText,
@@ -1501,6 +1502,15 @@ export function registerIpc(): void {
   );
 
   ipcMain.handle('notes:read-body', (_e, id: string): string => {
+    // 表示用の高速パス: 本文はローカル DB の write-through キャッシュから返す。
+    // クラウド (Google Drive 等) の `.md` がオンライン専用 (未ダウンロード) だと
+    // readFileSync がオンデマンド取得で 1 秒以上ブロックするため、ここでは
+    // ローカル DB を優先する。DB は本文書き込み・同期 pull の両方で更新される
+    // (writeNoteFile より前に updateNoteBodyText / upsertNoteFromSyncWithBody が
+    // DB を更新する) ため、常に `.md` と同じか新しい。
+    // DB に行が無い場合のみ `.md` にフォールバックする。
+    const dbBody = getNoteBody(id);
+    if (dbBody !== null) return dbBody;
     return readBody(id);
   });
 

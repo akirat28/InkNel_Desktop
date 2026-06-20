@@ -103,6 +103,19 @@ export function getNote(id: string): NoteMeta | null {
   return row ? rowToMeta(row) : null;
 }
 
+/**
+ * ノート本文 (body) だけを DB から直接返す。表示用の高速パス。
+ * クラウド (Google Drive 等) 上の `.md` を読みに行かず、ローカル SQLite の
+ * write-through キャッシュから即座に取得する。行が無ければ null。
+ */
+export function getNoteBody(id: string): string | null {
+  const db = initDb();
+  const row = db
+    .prepare(`SELECT body FROM notes WHERE id = ?`)
+    .get(id) as { body: string } | undefined;
+  return row ? row.body : null;
+}
+
 export function insertNote(meta: NoteMeta, body = ''): void {
   const db = initDb();
   db.prepare(

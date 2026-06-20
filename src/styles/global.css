@@ -5772,6 +5772,21 @@ body,
   margin: 0.8em 0;
 }
 
+.preview [data-md-editable='true'] {
+  cursor: text;
+  border-radius: 4px;
+}
+
+.preview [data-md-editable='true']:hover {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.preview [data-md-editable='true']:focus {
+  outline: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  outline-offset: 3px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
 .preview a {
   color: var(--accent);
   text-decoration: none;
