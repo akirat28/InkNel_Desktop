@@ -1,4 +1,5 @@
 import { useMemo, useState, type RefObject } from 'react';
+import type { EditorHandle } from './Editor';
 import TablePicker from './TablePicker';
 import IconPicker from './IconPicker';
 import LinkPopover from './LinkPopover';
@@ -8,16 +9,8 @@ import { listPlugins } from '../plugins/registry';
 import { getRuntimePlugins } from '../plugins/runtimeLoader';
 import type { PluginToolbarButton } from '../plugins/types';
 
-export interface ToolbarEditorHandle {
-  insert(text: string): void;
-  wrap(before: string, after: string, placeholder?: string): void;
-  prefixLine(prefix: string): void;
-  getSelectionRange(): { from: number; to: number; text: string };
-  replaceRange(from: number, to: number, text: string): void;
-}
-
 interface Props {
-  editorRef: RefObject<ToolbarEditorHandle>;
+  editorRef: RefObject<EditorHandle>;
   /** 日付挿入ボタンが使うフォーマット文字列 */
   dateFormat: string;
   /** テンプレートフォルダ名（設定から） */
@@ -618,3 +611,4 @@ function SmileyIcon() {
     </svg>
   );
 }
+

@@ -16,9 +16,7 @@ import Editor, {
   type MacroAction,
 } from './components/Editor';
 import EditorToolbar from './components/EditorToolbar';
-import Preview, {
-  type PreviewEditorHandle,
-} from './components/Preview';
+import Preview, { type PreviewHandle } from './components/Preview';
 import Sidebar, {
   type SidebarMode,
   type SidebarHandle,
@@ -548,12 +546,10 @@ export default function App() {
   const editorRef = useRef<EditorHandle>(null);
   /** エディタにカーソル/フォーカスがあるか。EditorToolbar の有効/無効を切り替える */
   const [editorFocused, setEditorFocused] = useState(false);
-  const [previewEditableFocused, setPreviewEditableFocused] = useState(false);
   // preview モードに切替えたら editorFocused をリセット（次回 edit/mix 切替後の
   // 「toolbar が前回の focus 状態で開く」を防ぐ）
   useEffect(() => {
     if (view === 'preview') setEditorFocused(false);
-    else setPreviewEditableFocused(false);
   }, [view]);
 
   // ----- 文字数 / 単語数（フッタ右端に表示） -----
@@ -573,8 +569,7 @@ export default function App() {
   // onScroll コールバックでスクロール要素自体を渡してくれる。
   // 受け取った側で比率を計算して反対側の scrollTop を更新する。
   const mixBodyRef = useRef<HTMLDivElement | null>(null);
-  const previewMixRef = useRef<PreviewEditorHandle | null>(null);
-  const previewEditorRef = useRef<PreviewEditorHandle | null>(null);
+  const previewMixRef = useRef<PreviewHandle | null>(null);
   // ----- MIX モードの左右分割比 (Editor 側の % 値、0-100) -----
   // ユーザーが境界線をドラッグして変更可能。localStorage に永続化。
   // 旧バージョンでは 50/50 固定だったため未保存 = 50 を既定値にする。
@@ -3433,20 +3428,13 @@ export default function App() {
                     onNameChange={handleNameChange}
                     onSelectView={(next) => void handleSelectEditOrPreview(next)}
                   />
-                  {settings.showInsertButtons &&
-                    (view !== 'preview' || previewEditableFocused) && (
+                  {view !== 'preview' && settings.showInsertButtons && (
                     <EditorToolbar
-                      editorRef={
-                        view === 'preview' ? previewEditorRef : editorRef
-                      }
+                      editorRef={editorRef}
                       dateFormat={settings.dateFormat}
                       templateFolder={settings.templateFolder}
                       enabledPlugins={settings.enabledPlugins}
-                      disabled={
-                        view === 'preview'
-                          ? !previewEditableFocused
-                          : !editorFocused
-                      }
+                      disabled={!editorFocused}
                       onApplyTemplateTags={(tags) => {
                         // テンプレートのタグを現在のタグへマージ。重複は除く。
                         const next = [...editingTags];
@@ -3549,7 +3537,6 @@ export default function App() {
                       />
                     ) : (
                       <Preview
-                        ref={previewEditorRef}
                         value={body}
                         codeCopyAlwaysVisible={settings.codeCopyAlwaysVisible}
                         showLineNumbers={settings.codeShowLineNumbers}
@@ -3557,8 +3544,8 @@ export default function App() {
                         enabledPlugins={settings.enabledPlugins}
                         theme={settings.theme}
                         // 保護ノートが未解錠 (isActiveLocked) ならビュー編集系を封じる
+                        // (現状の用途はチェックボックスのトグルのみ)
                         onChange={isActiveLocked ? undefined : handleBodyChange}
-                        onFocusChange={setPreviewEditableFocused}
                       />
                     )}
                   </div>

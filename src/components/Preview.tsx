@@ -7,7 +7,6 @@ import {
 } from '../utils/highlight';
 import { getEnabledPlugins } from '../plugins/registry';
 import { subscribeRuntimePlugins } from '../plugins/runtimeLoader';
-import type { ToolbarEditorHandle } from './EditorToolbar';
 
 interface Props {
   value: string;
@@ -28,8 +27,6 @@ interface Props {
    * 渡されない場合はチェックボックスは表示されるがクリックしても変化しない。
    */
   onChange?: (next: string) => void;
-  /** Preview 内の直接編集ブロックにフォーカスがあるか通知する。 */
-  onFocusChange?: (focused: boolean) => void;
   /**
    * プレビュー領域がスクロールされたとき呼ばれる。MIX モードの同期スクロール用。
    * スクロール要素自体を渡すので、scrollTop / scrollHeight / clientHeight を直接参照可能。
@@ -168,86 +165,12 @@ function toggleTaskInBody(body: string, taskIndex: number): string {
   return body;
 }
 
-function updateEditableBlockInBody(
-  body: string,
-  lineIndex: number,
-  kind: string,
-  text: string,
-): string {
-  const lines = body.split('\n');
-  if (lineIndex < 0 || lineIndex >= lines.length) return body;
-  const nextText = text.replace(/\u00a0/g, ' ').trimEnd();
-  const current = lines[lineIndex] ?? '';
-
-  if (kind === 'heading') {
-    const m = /^(\s{0,3}#{1,6}\s+)(.*?)(\s+#*\s*)?$/.exec(current);
-    if (!m) return body;
-    lines[lineIndex] = `${m[1]}${nextText}${m[3] ?? ''}`;
-    return lines.join('\n');
-  }
-
-  if (kind === 'list_item') {
-    const m = /^(\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?)(.*)$/.exec(current);
-    if (!m) return body;
-    lines[lineIndex] = `${m[1]}${nextText}`;
-    return lines.join('\n');
-  }
-
-  if (kind === 'paragraph') {
-    let end = lineIndex + 1;
-    while (end < lines.length && lines[end].trim().length > 0) end++;
-    const replacement = nextText.split('\n');
-    lines.splice(lineIndex, end - lineIndex, ...replacement);
-    return lines.join('\n');
-  }
-
-  return body;
-}
-
-function editableTextFromElement(el: HTMLElement): string {
-  return (el.innerText ?? '').replace(/\n+$/g, '');
-}
-
-function getTextSelectionInElement(
-  el: HTMLElement,
-): { from: number; to: number; text: string } {
-  const selection = window.getSelection();
-  const fullText = editableTextFromElement(el);
-  if (!selection || selection.rangeCount === 0) {
-    return { from: fullText.length, to: fullText.length, text: '' };
-  }
-  const range = selection.getRangeAt(0);
-  if (!el.contains(range.startContainer) || !el.contains(range.endContainer)) {
-    return { from: fullText.length, to: fullText.length, text: '' };
-  }
-  const pre = range.cloneRange();
-  pre.selectNodeContents(el);
-  pre.setEnd(range.startContainer, range.startOffset);
-  const from = pre.toString().length;
-  const text = range.toString();
-  return { from, to: from + text.length, text };
-}
-
-function replaceEditableTextRange(
-  el: HTMLElement,
-  from: number,
-  to: number,
-  text: string,
-): void {
-  const current = editableTextFromElement(el);
-  const safeFrom = Math.max(0, Math.min(from, current.length));
-  const safeTo = Math.max(safeFrom, Math.min(to, current.length));
-  el.innerText = current.slice(0, safeFrom) + text + current.slice(safeTo);
-}
-
 export interface PreviewHandle {
   /** プレビューのスクロール要素を返す。MIX モードのスクロール同期で使用。 */
   getScrollElement(): HTMLElement | null;
 }
 
-export type PreviewEditorHandle = PreviewHandle & ToolbarEditorHandle;
-
-const Preview = forwardRef<PreviewEditorHandle, Props>(function Preview(
+const Preview = forwardRef<PreviewHandle, Props>(function Preview(
   {
     value,
     tags,
@@ -257,7 +180,6 @@ const Preview = forwardRef<PreviewEditorHandle, Props>(function Preview(
     enabledPlugins,
     theme,
     onChange,
-    onFocusChange,
     onScroll,
   },
   forwardedRef,
@@ -304,7 +226,6 @@ const Preview = forwardRef<PreviewEditorHandle, Props>(function Preview(
         self.renderToken(tokens, idx, opts));
 
     instance.renderer.rules.heading_open = (tokens, idx, opts, env, self) => {
-      const token = tokens[idx];
       const inlineToken = tokens[idx + 1];
       if (inlineToken && inlineToken.type === 'inline') {
         const text = inlineToken.content;
@@ -320,50 +241,10 @@ const Preview = forwardRef<PreviewEditorHandle, Props>(function Preview(
           } else {
             used.set(baseSlug, 1);
           }
-          token.attrJoin('id', slug);
+          tokens[idx].attrJoin('id', slug);
         }
       }
-      if (token.map) {
-        token.attrSet('data-md-editable', 'true');
-        token.attrSet('data-md-kind', 'heading');
-        token.attrSet('data-md-line', String(token.map[0]));
-        token.attrSet('contenteditable', onChange ? 'plaintext-only' : 'false');
-        token.attrSet('spellcheck', 'true');
-      }
       return defaultHeadingOpenRule(tokens, idx, opts, env, self);
-    };
-
-    const defaultParagraphOpenRule =
-      instance.renderer.rules.paragraph_open ??
-      ((tokens, idx, opts, _env, self) =>
-        self.renderToken(tokens, idx, opts));
-    instance.renderer.rules.paragraph_open = (tokens, idx, opts, env, self) => {
-      const token = tokens[idx];
-      if (token.map) {
-        token.attrSet('data-md-editable', 'true');
-        token.attrSet('data-md-kind', 'paragraph');
-        token.attrSet('data-md-line', String(token.map[0]));
-        token.attrSet('contenteditable', onChange ? 'plaintext-only' : 'false');
-        token.attrSet('spellcheck', 'true');
-      }
-      return defaultParagraphOpenRule(tokens, idx, opts, env, self);
-    };
-
-    const defaultListItemOpenRule =
-      instance.renderer.rules.list_item_open ??
-      ((tokens, idx, opts, _env, self) =>
-        self.renderToken(tokens, idx, opts));
-    instance.renderer.rules.list_item_open = (tokens, idx, opts, env, self) => {
-      const token = tokens[idx];
-      const className = token.attrGet('class') ?? '';
-      if (token.map && !className.split(/\s+/).includes('task-list-item')) {
-        token.attrSet('data-md-editable', 'true');
-        token.attrSet('data-md-kind', 'list_item');
-        token.attrSet('data-md-line', String(token.map[0]));
-        token.attrSet('contenteditable', onChange ? 'plaintext-only' : 'false');
-        token.attrSet('spellcheck', 'true');
-      }
-      return defaultListItemOpenRule(tokens, idx, opts, env, self);
     };
 
     // 画像 src の書き換え:
@@ -630,7 +511,7 @@ const Preview = forwardRef<PreviewEditorHandle, Props>(function Preview(
     return instance;
     // enabledLangSet / lineNumbersEnabled / fenceProviders が変わったら再生成
     // （fence ルールがクロージャで掴むため）
-  }, [enabledLangSet, lineNumbersEnabled, fenceProviders, onChange]);
+  }, [enabledLangSet, lineNumbersEnabled, fenceProviders]);
 
   const html = useMemo(() => md.render(value), [md, value]);
 
@@ -638,6 +519,15 @@ const Preview = forwardRef<PreviewEditorHandle, Props>(function Preview(
   // 各プラグインの resetInPreview → renderInPreview を順に呼ぶ。
   // テーマや本文 (html) が変わったタイミングで再実行する。
   const previewRef = useRef<HTMLDivElement | null>(null);
+  useImperativeHandle(
+    forwardedRef,
+    () => ({
+      getScrollElement() {
+        return previewRef.current;
+      },
+    }),
+    [],
+  );
   // プレビュー要素のスクロールを購読し、親 (App) に通知する。
   // MIX モードでのみ親で利用されるが、購読自体は常に張っても害はない。
   useEffect(() => {
@@ -687,8 +577,6 @@ const Preview = forwardRef<PreviewEditorHandle, Props>(function Preview(
 
   // ----- ライトボックス（クリックで拡大表示） -----
   const [zoomedSrc, setZoomedSrc] = useState<string | null>(null);
-  const editingOriginalTextRef = useRef<string | null>(null);
-  const currentEditableRef = useRef<HTMLElement | null>(null);
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
@@ -826,138 +714,6 @@ const Preview = forwardRef<PreviewEditorHandle, Props>(function Preview(
     }
   };
 
-  const getEditableTarget = (target: EventTarget | null): HTMLElement | null => {
-    if (!(target instanceof HTMLElement)) return null;
-    return target.closest('[data-md-editable="true"]') as HTMLElement | null;
-  };
-
-  const commitEditableTarget = (el: HTMLElement): void => {
-    const lineAttr = el.getAttribute('data-md-line');
-    const kind = el.getAttribute('data-md-kind') ?? '';
-    if (!lineAttr || !onChange) return;
-    const line = Number.parseInt(lineAttr, 10);
-    if (!Number.isFinite(line)) return;
-    const next = updateEditableBlockInBody(
-      value,
-      line,
-      kind,
-      editableTextFromElement(el),
-    );
-    if (next !== value) onChange(next);
-  };
-
-  const replaceCurrentEditableRange = (
-    from: number,
-    to: number,
-    text: string,
-  ): void => {
-    const el = currentEditableRef.current;
-    if (!el) return;
-    replaceEditableTextRange(el, from, to, text);
-    commitEditableTarget(el);
-  };
-
-  useImperativeHandle(
-    forwardedRef,
-    () => ({
-      getScrollElement() {
-        return previewRef.current;
-      },
-      insert(text: string) {
-        const el = currentEditableRef.current;
-        if (!el) return;
-        const { from, to } = getTextSelectionInElement(el);
-        replaceCurrentEditableRange(from, to, text);
-      },
-      wrap(before: string, after: string, placeholder = '') {
-        const el = currentEditableRef.current;
-        if (!el) return;
-        const { from, to, text } = getTextSelectionInElement(el);
-        const inner = text || placeholder;
-        replaceCurrentEditableRange(from, to, `${before}${inner}${after}`);
-      },
-      prefixLine(prefix: string) {
-        const el = currentEditableRef.current;
-        if (!el || !onChange) return;
-        const lineAttr = el.getAttribute('data-md-line');
-        if (!lineAttr) return;
-        const line = Number.parseInt(lineAttr, 10);
-        if (!Number.isFinite(line)) return;
-        const lines = value.split('\n');
-        if (line < 0 || line >= lines.length) return;
-        lines[line] = `${prefix}${editableTextFromElement(el)}`;
-        onChange(lines.join('\n'));
-      },
-      getSelectionRange() {
-        const el = currentEditableRef.current;
-        if (!el) return { from: 0, to: 0, text: '' };
-        return getTextSelectionInElement(el);
-      },
-      replaceRange(from: number, to: number, text: string) {
-        replaceCurrentEditableRange(from, to, text);
-      },
-    }),
-    [onChange, value],
-  );
-
-  const handleEditableFocus = (e: React.FocusEvent<HTMLDivElement>) => {
-    const el = getEditableTarget(e.target);
-    if (!el || el.getAttribute('contenteditable') !== 'plaintext-only') return;
-    currentEditableRef.current = el;
-    editingOriginalTextRef.current = editableTextFromElement(el);
-    onFocusChange?.(true);
-  };
-
-  const handleEditableBlur = (e: React.FocusEvent<HTMLDivElement>) => {
-    const el = getEditableTarget(e.target);
-    if (!el || el.getAttribute('contenteditable') !== 'plaintext-only') return;
-    commitEditableTarget(el);
-    editingOriginalTextRef.current = null;
-  };
-
-  const handleDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
-    if (target.closest('a, button, input, img, [data-copy-code]')) return;
-    const editable = getEditableTarget(target);
-    if (editable) {
-      editable.focus();
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const editable = getEditableTarget(e.target);
-    if (editable && editable.getAttribute('contenteditable') === 'plaintext-only') {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        if (editingOriginalTextRef.current !== null) {
-          editable.innerText = editingOriginalTextRef.current;
-        }
-        editable.blur();
-        return;
-      }
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        editable.blur();
-      }
-      return;
-    }
-  };
-
-  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
-    const editable = getEditableTarget(e.target);
-    if (editable && editable.getAttribute('contenteditable') === 'plaintext-only') {
-      const text = e.clipboardData.getData('text/plain');
-      if (text.length === 0) return;
-      e.preventDefault();
-      const selection = window.getSelection();
-      if (!selection || selection.rangeCount === 0) return;
-      selection.deleteFromDocument();
-      selection.getRangeAt(0).insertNode(document.createTextNode(text));
-      selection.collapseToEnd();
-      return;
-    }
-  };
-
   const visibleTags = tags?.filter((t) => t.length > 0) ?? [];
 
   return (
@@ -966,11 +722,6 @@ const Preview = forwardRef<PreviewEditorHandle, Props>(function Preview(
         ref={previewRef}
         className={`preview markdown-body ${codeCopyAlwaysVisible ? 'is-code-copy-pinned' : ''}`}
         onClick={handleClick}
-        onFocus={handleEditableFocus}
-        onBlur={handleEditableBlur}
-        onDoubleClick={handleDoubleClick}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
       >
         {visibleTags.length > 0 && (
           <div className="preview__tags" aria-label="タグ">
