@@ -2205,6 +2205,125 @@ body,
   letter-spacing: 0.05em;
 }
 
+/* ---------- Color Picker（文字色 / 文字背景色。ボタン真下に表示） ---------- */
+.color-picker {
+  position: fixed;
+  z-index: 200;
+  /* x はボタン中心が指定されるので、中央寄せのため自身を半幅左へずらす */
+  transform: translateX(-50%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px var(--shadow);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  user-select: none;
+}
+
+/* 上向き三角ポインタ（table-picker と同じ二重三角） */
+.color-picker::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  margin-left: -7px;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 7px solid var(--border);
+}
+
+.color-picker::after {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  margin-left: -6px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 6px solid var(--bg-elevated);
+}
+
+.color-picker__title {
+  font-size: 11px;
+  color: var(--fg-muted);
+  letter-spacing: 0.05em;
+}
+
+.color-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 20px);
+  gap: 4px;
+}
+
+.color-picker__swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: transform 0.05s ease, border-color 0.05s ease;
+}
+
+.color-picker__swatch:hover {
+  border-color: var(--accent);
+  transform: scale(1.12);
+}
+
+.color-picker__custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+  border-top: 1px solid var(--border);
+}
+
+/* ネイティブのカラー入力。枠と余白を詰めてスウォッチと揃える */
+.color-picker__input {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+
+.color-picker__code {
+  flex: 1;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.color-picker__apply,
+.color-picker__clear {
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.color-picker__apply:hover,
+.color-picker__clear:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.color-picker__clear {
+  align-self: stretch;
+  text-align: center;
+}
+
 /* ---------- Icon Picker（吹き出し型、ボタン真下に表示） ---------- */
 .icon-picker {
   position: fixed;

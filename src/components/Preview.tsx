@@ -5,6 +5,7 @@ import {
   highlightCode,
   resolveHighlightLangId,
 } from '../utils/highlight';
+import { colorSpanPlugin } from '../utils/colorSpan';
 import { getEnabledPlugins } from '../plugins/registry';
 import { subscribeRuntimePlugins } from '../plugins/runtimeLoader';
 
@@ -215,6 +216,11 @@ const Preview = forwardRef<PreviewHandle, Props>(function Preview(
       linkify: true,
       breaks: true,
     });
+
+    // ----- 文字色 / 文字背景色 (<span style="color:...">) -----
+    // html:false のまま、color / background-color だけを持つ span を
+    // ホワイトリスト方式で許可する (詳細は utils/colorSpan.ts)。
+    instance.use(colorSpanPlugin);
 
     // ----- 見出しに自動で id を付与（アンカーリンク用） -----
     // 見出しテキストから "slug" を生成し、heading_open に id 属性を追加する。

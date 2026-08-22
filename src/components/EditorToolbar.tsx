@@ -3,8 +3,10 @@ import type { EditorHandle } from './Editor';
 import TablePicker from './TablePicker';
 import IconPicker from './IconPicker';
 import LinkPopover from './LinkPopover';
+import ColorPicker from './ColorPicker';
 import TemplatePicker from './TemplatePicker';
 import { formatDate } from '../utils/dateFormat';
+import { stripColorSpans } from '../utils/colorSpan';
 import { listPlugins } from '../plugins/registry';
 import { getRuntimePlugins } from '../plugins/runtimeLoader';
 import type { PluginToolbarButton } from '../plugins/types';
@@ -285,6 +287,53 @@ export default function EditorToolbar({
     editorRef.current?.replaceRange(range.from, range.to, converted);
   };
 
+  // 文字色 / 文字背景色ピッカー。
+  // 挿入結果は `<span style="color:...">…</span>` 形式の Markdown 埋め込み HTML で、
+  // プレビュー側は utils/colorSpan.ts のホワイトリスト規則でこれを描画する。
+  const [colorPickerState, setColorPickerState] = useState<{
+    x: number;
+    y: number;
+    mode: 'text' | 'background';
+  } | null>(null);
+
+  const openColorPicker =
+    (mode: 'text' | 'background') =>
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setColorPickerState({
+        x: rect.left + rect.width / 2,
+        y: rect.bottom + 8,
+        mode,
+      });
+    };
+
+  const handleColorSelect = (color: string) => {
+    if (!colorPickerState) return;
+    const prop =
+      colorPickerState.mode === 'text' ? 'color' : 'background-color';
+    const placeholder =
+      colorPickerState.mode === 'text' ? '色付き文字' : '背景色付き文字';
+    wrap(`<span style="${prop}:${color}">`, '</span>', placeholder);
+    setColorPickerState(null);
+  };
+
+  // 選択範囲に含まれる色指定 span をまとめて外す。
+  // タグごと選択していなくても、範囲内に収まっている span は解除される。
+  const handleColorClear = () => {
+    const range = editorRef.current?.getSelectionRange();
+    if (!range || range.from === range.to) {
+      window.alert('色を解除したい範囲を選択してから実行してください。');
+      return;
+    }
+    const stripped = stripColorSpans(range.text);
+    if (stripped === range.text) {
+      window.alert('選択範囲に色指定は含まれていません。');
+      return;
+    }
+    editorRef.current?.replaceRange(range.from, range.to, stripped);
+    setColorPickerState(null);
+  };
+
   // テンプレートピッカー
   const [templatePickerPos, setTemplatePickerPos] = useState<{
     x: number;
@@ -343,6 +392,18 @@ export default function EditorToolbar({
         </ToolBtn>
         <ToolBtn label="斜体 (*…*)" onClick={() => wrap('*', '*', '斜体')}>
           <em>I</em>
+        </ToolBtn>
+        <ToolBtn
+          label={'文字色 (<span style="color:…">)'}
+          onClick={openColorPicker('text')}
+        >
+          <TextColorIcon />
+        </ToolBtn>
+        <ToolBtn
+          label={'文字背景色 (<span style="background-color:…">)'}
+          onClick={openColorPicker('background')}
+        >
+          <BgColorIcon />
         </ToolBtn>
         <ToolBtn
           label="取り消し線 (~~…~~)"
@@ -464,6 +525,16 @@ export default function EditorToolbar({
           folderName={templateFolder}
           onSelect={handleTemplateSelect}
           onClose={() => setTemplatePickerPos(null)}
+        />
+      )}
+      {colorPickerState && (
+        <ColorPicker
+          x={colorPickerState.x}
+          y={colorPickerState.y}
+          mode={colorPickerState.mode}
+          onSelect={handleColorSelect}
+          onClear={handleColorClear}
+          onClose={() => setColorPickerState(null)}
         />
       )}
       {linkPopoverState && (
@@ -612,3 +683,52 @@ function SmileyIcon() {
   );
 }
 
+/** 文字色ボタンのアイコン: 「A」の下にカラーバー (14x14) */
+function TextColorIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <text
+        x="8"
+        y="11"
+        textAnchor="middle"
+        fontSize="11"
+        fontWeight="700"
+        fill="currentColor"
+        stroke="none"
+      >
+        A
+      </text>
+      <rect x="2" y="12.5" width="12" height="2.6" rx="0.6" fill="#e74c3c" />
+    </svg>
+  );
+}
+
+/** 文字背景色ボタンのアイコン: 塗りつぶした矩形の上に「A」(14x14) */
+function BgColorIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="1.6" y="2.4" width="12.8" height="11.2" rx="1.4" fill="#fff2a8" />
+      <rect
+        x="1.6"
+        y="2.4"
+        width="12.8"
+        height="11.2"
+        rx="1.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.1"
+      />
+      <text
+        x="8"
+        y="11.6"
+        textAnchor="middle"
+        fontSize="9.5"
+        fontWeight="700"
+        fill="#333"
+        stroke="none"
+      >
+        A
+      </text>
+    </svg>
+  );
+}

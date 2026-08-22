@@ -281,6 +281,19 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
   // ヒット内ナビゲーションの現在位置（matches 配列の index）。
   // ヒット 0 件、または query 空のときは -1。
   const [inlineSearchIndex, setInlineSearchIndex] = useState<number>(-1);
+  /**
+   * インライン検索で「ユーザーが明示的にヒットを移動したか」を表すフラグ。
+   *
+   * クエリ入力 / Enter / Shift+Enter / ◀▶ ボタンのときだけ true にし、
+   * 下の同期 effect がノートを開いたら false に戻す。
+   *
+   * 背景: inlineSearchHits は tree (= files) から useMemo で作られるため、
+   * 他のノートを編集して保存が走るたびに配列の参照だけが変わり、
+   * ヒットも現在位置も同じままなのに effect が再実行されていた。
+   * その結果 onSelect() が呼ばれ、編集中に検索ヒットのノートへ
+   * 勝手に画面が切り替わってしまう。このフラグで明示操作時のみに限定する。
+   */
+  const inlineSearchNavRef = useRef(false);
   const expandedLoadedRef = useRef(false);
 
   // 起動時に DB から復元
@@ -428,16 +441,22 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
   }, [inlineSearchHits.length, inlineSearchQuery]);
 
   /**
-   * インライン検索の「現在ヒット」が変わるたびに、
+   * インライン検索でユーザーがヒットを移動したときに、
    * - 祖先フォルダを自動展開
    * - 対象行を scrollIntoView
    * - ファイルヒットなら onSelect(id) で開く
+   *
+   * 実行条件は inlineSearchNavRef が true のときのみ (詳細は ref の定義を参照)。
    */
   useEffect(() => {
     if (!inlineSearchOpen) return;
     if (inlineSearchIndex < 0) return;
     const hit = inlineSearchHits[inlineSearchIndex];
     if (!hit) return;
+    // ユーザーの明示操作を伴わない再実行 (files 更新による hits の参照変化など) では
+    // 展開・スクロール・ノート切り替えのいずれも行わない。
+    if (!inlineSearchNavRef.current) return;
+    inlineSearchNavRef.current = false;
 
     // 展開すべき祖先パスを集める
     //   file: ノートの folder
@@ -491,12 +510,14 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
 
   const goNextHit = () => {
     if (inlineSearchHits.length === 0) return;
+    inlineSearchNavRef.current = true;
     setInlineSearchIndex(
       (i) => (i + 1 + inlineSearchHits.length) % inlineSearchHits.length,
     );
   };
   const goPrevHit = () => {
     if (inlineSearchHits.length === 0) return;
+    inlineSearchNavRef.current = true;
     setInlineSearchIndex(
       (i) =>
         (i - 1 + inlineSearchHits.length) % inlineSearchHits.length,
@@ -846,8 +867,8 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
                     return next;
                   });
                 }}
-                title="ノート名で探す"
-                aria-label="ノート名で探す"
+                title="ノートタイトル検索"
+                aria-label="ノートタイトル検索"
                 aria-pressed={inlineSearchOpen}
               >
                 <SearchSmallIcon />
@@ -879,9 +900,13 @@ const Sidebar = forwardRef<SidebarHandle, Props>(function Sidebar(
                 type="text"
                 className="sidebar__inline-search-input"
                 value={inlineSearchQuery}
-                placeholder="ノート名を入力..."
+                placeholder="ノートタイトル検索"
                 autoFocus
-                onChange={(e) => setInlineSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  // 入力自体もユーザーの明示操作。先頭ヒットまで送る。
+                  inlineSearchNavRef.current = true;
+                  setInlineSearchQuery(e.target.value);
+                }}
                 onKeyDown={(e) => {
                   // Enter / Shift+Enter で次/前へ
                   if (e.key === 'Enter') {
