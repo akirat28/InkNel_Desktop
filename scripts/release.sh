@@ -5,8 +5,8 @@
 # 機能:
 #   1. package.json のバージョンを指定値に更新 (npm version)
 #   2. git commit + push (現在の main へ)
-#   3. macOS arm64 DMG (公証込み) → Windows ZIP → Linux deb/AppImage の順にビルド
-#   4. GitHub Release を作成 (タグ作成 + 3 ファイル添付 + ノート)
+#   3. macOS arm64 DMG (公証込み) → Windows ZIP の順にビルド
+#   4. GitHub Release を作成 (タグ作成 + 2 ファイル添付 + ノート)
 #   5. ローカル開発復元 (better-sqlite3 を Mac Electron 向けに再ビルド)
 #
 # 使い方:
@@ -112,10 +112,9 @@ echo "✓ push 完了"
 # ----- 3. ビルド (順次) -----
 DMG_FILE="release/InkNel-${VERSION}-arm64.dmg"
 WIN_FILE="release/InkNel-${VERSION}-win.zip"
-DEB_FILE="release/inknel-elec_${VERSION}_amd64.deb"
 
 echo ""
-echo "▶ [3/5] ビルド開始 (3 種類を順次)..."
+echo "▶ [3/5] ビルド開始 (2 種類を順次)..."
 
 echo "  - macOS arm64 DMG (公証込み)..."
 npm run dist:mac:arm64 >/dev/null 2>&1 || {
@@ -132,14 +131,6 @@ npm run dist:win:zip >/dev/null 2>&1 || {
 }
 [[ -f "$WIN_FILE" ]] || { echo "❌ $WIN_FILE が生成されていません" >&2; exit 1; }
 echo "    ✓ $WIN_FILE ($(du -h "$WIN_FILE" | cut -f1))"
-
-echo "  - Linux deb (Ubuntu/Debian)..."
-npm run dist:linux >/dev/null 2>&1 || {
-  echo "❌ Linux ビルド失敗。" >&2
-  exit 1
-}
-[[ -f "$DEB_FILE" ]] || { echo "❌ $DEB_FILE が生成されていません" >&2; exit 1; }
-echo "    ✓ $DEB_FILE ($(du -h "$DEB_FILE" | cut -f1))"
 
 # ----- 4. GitHub Release 作成 -----
 echo ""
@@ -162,12 +153,10 @@ NOTES_BODY=$(cat <<EOF
 |---|---|
 | macOS (Apple Silicon) | \`InkNel-${VERSION}-arm64.dmg\` |
 | Windows (x64, ポータブル) | \`InkNel-${VERSION}-win.zip\` |
-| Linux (Ubuntu / Debian, x64) | \`inknel-elec_${VERSION}_amd64.deb\` |
 
 ### インストール
 - **macOS**: DMG をマウントして \`InkNel.app\` を Applications フォルダにドラッグ。Apple 公証済み。
 - **Windows**: ZIP を解凍し、\`InkNel.exe\` を直接実行 (インストール不要)。
-- **Linux (Ubuntu / Debian)**: \`sudo apt install ./inknel-elec_${VERSION}_amd64.deb\`
 
 ### このバージョンの変更点
 $NOTES
@@ -177,7 +166,6 @@ EOF
 gh release create "$TAG" \
   "$DMG_FILE" \
   "$WIN_FILE" \
-  "$DEB_FILE" \
   --title "InkNel $TAG" \
   --notes "$NOTES_BODY"
 
