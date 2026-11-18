@@ -62,6 +62,7 @@ import {
   insertFolder,
   deleteFolder,
   deleteFolderRecursive,
+  pruneEmptyFolders,
   renameFolder,
   setFolderIconColor,
 } from './db/folders';
@@ -71,12 +72,12 @@ import {
   readBodyWithMeta,
   readFrontMatterOnly,
   writeNoteFile,
-  deleteBody,
   writeTombstone,
   isTombstoneMeta,
 } from './storage/notesFiles';
 import {
   readFolderColors,
+  removeFolderColors,
   writeFolderColors,
 } from './storage/foldersFile';
 import {
@@ -1693,6 +1694,7 @@ export function registerIpc(): void {
     // のファイル) に書き換える。物理削除すると他デバイスで「DB ある / MD 無し =
     // 新規」と誤判定されてノートが復活してしまうため。DB body は restore 用に残す。
     writeTombstone(id);
+    removeFolderColors(pruneEmptyFolders(note.folder));
     const p = getActiveShareProvider();
     if (p !== 'none') removeSingleNote(p, id);
   });
@@ -1711,7 +1713,7 @@ export function registerIpc(): void {
     if (!restored) return null;
     // body は DB に残してあるのでそれを使って .md を書き戻す
     try {
-      const body = readBody(restored.id) || '';
+      const body = getNoteBody(restored.id) ?? '';
       writeNoteFile(restored, body);
     } catch (err) {
       console.warn('[notes:restore] writeNoteFile failed:', err);
@@ -1849,6 +1851,7 @@ export function registerIpc(): void {
   ipcMain.handle('folders:delete', (_e, path: string): void => {
     const normalized = normalizeFolderPath(path);
     if (!normalized) return;
+    removeFolderColors([normalized]);
     deleteFolder(normalized);
   });
 
@@ -1860,10 +1863,10 @@ export function registerIpc(): void {
       if (!normalized) return { deletedCount: 0 };
       const noteIds = deleteFolderRecursive(normalized);
       const provider = getActiveShareProvider();
-      // 本文 .md ファイル削除 + クラウド側のファイルも削除
+      // 共有先でノートを再生成しないよう、本文の代わりに削除墓標を残す。
       for (const id of noteIds) {
         try {
-          deleteBody(id);
+          writeTombstone(id);
         } catch {
           // 失敗しても続行
         }
@@ -1875,6 +1878,7 @@ export function registerIpc(): void {
           }
         }
       }
+      removeFolderColors([normalized], true);
       return { deletedCount: noteIds.length };
     },
   );
@@ -2397,7 +2401,9 @@ export function registerIpc(): void {
       // (他環境で削除されたノートを、こちらの DB からも消す)
       for (const target of plan.dbDeleteTargets) {
         try {
+          const note = getNote(target.id);
           deleteNote(target.id);
+          if (note) removeFolderColors(pruneEmptyFolders(note.folder));
           // tombstone ファイル自体は残しておく (purgeOldTombstones が retention 後に物理削除)
           deleted++;
         } catch (err) {

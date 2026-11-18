@@ -27,11 +27,13 @@ import {
   expect,
   beforeEach,
   afterAll,
+  vi,
 } from 'vitest';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cleanupAllUserDataDirs, newUserDataDir } from './helpers';
+import { ipcMain } from 'electron';
 import { closeDb, initDb } from '../electron/db/index';
 import {
   insertNote,
@@ -47,7 +49,8 @@ import {
   isTombstoneMeta,
   readBodyWithMeta,
 } from '../electron/storage/notesFiles';
-import { buildSyncPlan, STORAGE_LAST_SYNC_KEY } from '../electron/ipc';
+import { registerIpc, buildSyncPlan, STORAGE_LAST_SYNC_KEY } from '../electron/ipc';
+import { readFolderColors } from '../electron/storage/foldersFile';
 import {
   clearStorageRootCache,
   STORAGE_PATH_SETTING_KEY,
@@ -125,6 +128,66 @@ afterAll(() => {
 });
 
 describe('tombstone sync シナリオ', () => {
+  function captureInvoke() {
+    const registration = vi.spyOn(ipcMain, 'handle');
+    try {
+      registerIpc();
+      const handlers = new Map(registration.mock.calls);
+      return (channel: string, ...args: unknown[]) =>
+        handlers.get(channel)!({} as Electron.IpcMainInvokeEvent, ...args);
+    } finally {
+      registration.mockRestore();
+    }
+  }
+
+  test('最後のノートを削除すると空になった階層が消え、復元すると本文と階層が戻る', async () => {
+    switchToDevice(newSharedFolder());
+    const invoke = captureInvoke();
+    const folder = '親/子';
+    const body = '# 復元する本文';
+    invoke('folders:create', '親');
+    invoke('folders:set-icon-color', folder, '#ff0000');
+    const first: NoteMeta = invoke('notes:create', { folder, body });
+    const last: NoteMeta = invoke('notes:create', { folder, body });
+
+    invoke('notes:delete', first.id);
+    expect(invoke('folders:list')).toEqual(['親', folder]);
+    invoke('notes:delete', last.id);
+    invoke('folders:sync-icon-colors');
+    await invoke('storage:sync');
+    expect(invoke('folders:list')).toEqual([]);
+    expect(readFolderColors()).toEqual({});
+
+    invoke('notes:restore', last.id);
+    expect(readBodyWithMeta(last.id)).toMatchObject({ meta: { folder }, body });
+  });
+
+  test('空フォルダを手動削除しても色同期で復活せず、別の階層は残る', () => {
+    switchToDevice(newSharedFolder());
+    const invoke = captureInvoke();
+    invoke('folders:set-icon-color', 'a_%/子', '#ff0000');
+    invoke('folders:set-icon-color', 'abc/子', '#00ff00');
+
+    invoke('folders:delete-recursive', 'a_%');
+    invoke('folders:sync-icon-colors');
+    expect(invoke('folders:list')).toEqual(['abc/子']);
+    expect(readFolderColors()).toEqual({ 'abc/子': '#00ff00' });
+  });
+
+  test('共有先の削除墓標を取り込むと最後のノートと空フォルダが消える', async () => {
+    switchToDevice(newSharedFolder());
+    const invoke = captureInvoke();
+    const folder = '共有フォルダ';
+    const note: NoteMeta = invoke('notes:create', { folder });
+    invoke('folders:set-icon-color', folder, '#ff0000');
+    writeTombstone(note.id, note.updatedAt + 1);
+
+    await expect(invoke('storage:sync')).resolves.toMatchObject({ deleted: 1 });
+    expect(invoke('notes:list')).toEqual([]);
+    expect(invoke('folders:list')).toEqual([]);
+    expect(readFolderColors()).toEqual({});
+  });
+
   test('単一デバイス: 削除 → tombstone が残り、sync で復活しない', async () => {
     const shared = newSharedFolder();
     switchToDevice(shared);

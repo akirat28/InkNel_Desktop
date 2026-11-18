@@ -59,3 +59,20 @@ export function writeFolderColors(
   const data: FoldersFileData = { version: 1, iconColors };
   writeFileSync(filePath(), JSON.stringify(data, null, 2), 'utf-8');
 }
+
+/** 削除済みのパスを色同期で復元しないよう、共有側からも取り除く。 */
+export function removeFolderColors(paths: readonly string[], recursive = false): void {
+  if (paths.length === 0) return;
+  const colors = readFolderColors();
+  let changed = false;
+  for (const path of Object.keys(colors)) {
+    const matches = paths.some(
+      (target) => path === target || (recursive && path.startsWith(target + '/')),
+    );
+    if (matches) {
+      delete colors[path];
+      changed = true;
+    }
+  }
+  if (changed) writeFolderColors(colors);
+}

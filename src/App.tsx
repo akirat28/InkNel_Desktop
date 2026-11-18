@@ -1964,12 +1964,16 @@ export default function App() {
         );
         return;
       }
-      const [list, trashed] = await Promise.all([
+      const [list, trashed, folderList, folderColors] = await Promise.all([
         window.api.notes.list(),
         window.api.notes.listTrashed(),
+        window.api.folders.list(),
+        window.api.folders.listIconColors(),
       ]);
       setNotes(list);
       setTrashedNotes(trashed);
+      setFolders(folderList);
+      setFolderIconColors(folderColors);
 
       // 削除されたノートをタブリスト・タブ状態から除去
       // ノート自体が消えるので、ピン留めの有無にかかわらず AI チャット履歴も破棄。
@@ -2180,12 +2184,14 @@ export default function App() {
       }
 
       // 一覧を再取得
-      const [list, folderList] = await Promise.all([
+      const [list, folderList, folderColors] = await Promise.all([
         window.api.notes.list(),
         window.api.folders.list(),
+        window.api.folders.listIconColors(),
       ]);
       setNotes(list);
       setFolders(folderList);
+      setFolderIconColors(folderColors);
 
       // 削除されたノートをタブリスト・タブ状態から除去
       const existingIds = new Set(list.map((n) => n.id));

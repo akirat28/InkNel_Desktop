@@ -55,6 +55,30 @@ export function deleteFolder(path: string): void {
   db.prepare(`DELETE FROM folders WHERE path = ?`).run(path);
 }
 
+/** ノート削除後、残っているノートやサブフォルダがない階層だけを取り除く。 */
+export function pruneEmptyFolders(path: string): string[] {
+  if (!path) return [];
+  const db = initDb();
+  const hasNotes = db.prepare(
+    `SELECT 1 FROM notes
+      WHERE trashed_at IS NULL AND (folder = ? OR instr(folder, ?) = 1) LIMIT 1`,
+  );
+  const hasSubfolders = db.prepare(
+    `SELECT 1 FROM folders WHERE instr(path, ?) = 1 LIMIT 1`,
+  );
+  const remove = db.prepare(`DELETE FROM folders WHERE path = ?`);
+  const removed: string[] = [];
+  let current = path;
+  while (current) {
+    const prefix = current + '/';
+    if (hasNotes.get(current, prefix) || hasSubfolders.get(prefix)) break;
+    remove.run(current);
+    removed.push(current);
+    current = current.slice(0, Math.max(0, current.lastIndexOf('/')));
+  }
+  return removed;
+}
+
 /**
  * フォルダパスを書き換え、配下の全ノートと全サブフォルダを一括更新する。
  *
@@ -125,9 +149,9 @@ export function deleteFolderRecursive(path: string): string[] {
   // 保護されているノートをチェック
   const protectedRows = db
     .prepare(
-      `SELECT id, title FROM notes WHERE (folder = ? OR folder LIKE ?) AND protected = 1`,
+      `SELECT id, title FROM notes WHERE (folder = ? OR instr(folder, ?) = 1) AND protected = 1`,
     )
-    .all(path, prefix + '%') as { id: string; title: string }[];
+    .all(path, prefix) as { id: string; title: string }[];
   if (protectedRows.length > 0) {
     const titles = protectedRows.map((r) => r.title || '無題').join(', ');
     throw new Error(
@@ -136,20 +160,20 @@ export function deleteFolderRecursive(path: string): string[] {
   }
 
   const noteIds = db
-    .prepare(`SELECT id FROM notes WHERE folder = ? OR folder LIKE ?`)
-    .all(path, prefix + '%') as { id: string }[];
+    .prepare(`SELECT id FROM notes WHERE folder = ? OR instr(folder, ?) = 1`)
+    .all(path, prefix) as { id: string }[];
   const ids = noteIds.map((r) => r.id);
 
   const tx = db.transaction(() => {
     // ノートを削除
-    db.prepare(`DELETE FROM notes WHERE folder = ? OR folder LIKE ?`).run(
+    db.prepare(`DELETE FROM notes WHERE folder = ? OR instr(folder, ?) = 1`).run(
       path,
-      prefix + '%',
+      prefix,
     );
     // 該当フォルダとサブフォルダを削除
-    db.prepare(`DELETE FROM folders WHERE path = ? OR path LIKE ?`).run(
+    db.prepare(`DELETE FROM folders WHERE path = ? OR instr(path, ?) = 1`).run(
       path,
-      prefix + '%',
+      prefix,
     );
   });
   tx();
