@@ -447,6 +447,9 @@ contextBridge.exposeInMainWorld('api', {
   },
 
   ai: {
+    listCopilotModels(endpoint: string, token: string): Promise<string[]> {
+      return ipcRenderer.invoke('ai:list-copilot-models', endpoint, token);
+    },
     transform(input: {
       provider: 'general' | 'chatgpt' | 'claudeCode' | 'copilot' | 'gemini';
       token: string;

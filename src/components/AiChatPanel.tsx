@@ -13,6 +13,7 @@ import {
 } from '../settings';
 import { useT } from '../i18n';
 import type { NoteMeta } from '../global';
+import { resolveAiModel } from '../utils/aiModels';
 import { extractPdfText } from '../utils/pdfText';
 
 interface Props {
@@ -221,10 +222,7 @@ function isTextFile(file: File): boolean {
 const MAX_TEXT_ATTACHMENT_BYTES = 1 * 1024 * 1024; // 1MB
 
 function getActiveModelName(settings: AppSettings): string {
-  const m = getActiveAiSettings(settings).model.trim();
-  if (m) return m;
-  if (settings.aiProvider === 'claudeCode') return 'claude-3-5-sonnet-latest';
-  return 'gpt-4o-mini';
+  return resolveAiModel(settings.aiProvider, getActiveAiSettings(settings).model);
 }
 
 /** 現在のAIプロバイダの表示用ラベル（一般的なAI / ChatGPT / ClaudeCode / Copilot） */

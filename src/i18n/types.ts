@@ -308,6 +308,13 @@ export interface Locale {
       modelSection: string;
       model: string;
       modelChatgptDesc: string;
+      modelClaudeDesc: string;
+      modelGeminiDesc: string;
+      modelCopilotDesc: string;
+      modelRefresh: string;
+      modelLoading: string;
+      modelPick: string;
+      modelUnavailable: string;
       modelDefaultDesc: string;
       modelPlaceholder: string;
       tokenSet: string; // chip on provider tab

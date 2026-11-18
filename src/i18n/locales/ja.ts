@@ -304,10 +304,17 @@ const ja: Locale = {
       endpoint: 'Endpoint',
       endpointPlaceholder: 'https://...',
       endpointDesc:
-        '空欄の場合はプロバイダ既定の URL を使います。「一般的な AI」と「Copilot」では OpenAI 互換 URL を指定してください。',
+        '空欄の場合はプロバイダ既定の URL を使います。Copilot には OpenAI 互換のチャット API URL の指定が必要です。',
       modelSection: 'モデル',
       model: '使用するモデル',
       modelChatgptDesc: 'ChatGPT 用のモデルから選択します。',
+      modelClaudeDesc: 'Anthropic API の Claude モデルから選択します。',
+      modelGeminiDesc: 'Gemini API のモデルから選択します。',
+      modelCopilotDesc: 'OpenAI 互換の接続先とトークンを設定し、モデル一覧を取得するか、モデル ID を入力してください。',
+      modelRefresh: 'モデル一覧を取得',
+      modelLoading: 'モデル一覧を取得中…',
+      modelPick: '接続先のモデルを選択',
+      modelUnavailable: 'モデル一覧を取得できませんでした。接続先とトークンを確認するか、モデル ID を入力してください。',
       modelDefaultDesc:
         '空欄の場合はプロバイダ別の既定モデルが使われます。',
       modelPlaceholder: 'モデル名（空欄でプロバイダ既定）',

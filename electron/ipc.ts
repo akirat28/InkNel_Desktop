@@ -31,6 +31,7 @@ import {
   promises as fsp,
 } from 'node:fs';
 import { initDb } from './db/index';
+import { resolveAiModel } from '../src/utils/aiModels';
 import { basename, extname, join, relative, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { isIPv4, isIPv6 } from 'node:net';
@@ -312,11 +313,16 @@ function defaultAiEndpoint(provider: AiProvider): string {
   return 'https://api.openai.com/v1/chat/completions';
 }
 
-function defaultAiModel(provider: AiProvider): string {
-  if (provider === 'claudeCode') return 'claude-3-5-sonnet-latest';
-  if (provider === 'chatgpt') return 'gpt-4o-mini';
-  if (provider === 'gemini') return 'gemini-2.0-flash';
-  return 'gpt-4o-mini';
+/** GPT-5 / GPT-6 の Chat Completions ではモデル既定の温度を使う。 */
+function openAiTemperature(
+  provider: AiProvider,
+  model: string,
+  temperature: number,
+): number | undefined {
+  return provider === 'copilot' ||
+    (provider === 'chatgpt' && /^gpt-[56](?:[.-]|$)/.test(model))
+    ? undefined
+    : temperature;
 }
 
 function cleanAiOutput(text: string): string {
@@ -397,7 +403,11 @@ async function callOpenAiCompatible(
     },
     body: JSON.stringify({
       model,
-      temperature: aiTemperatureFor(input.action),
+      temperature: openAiTemperature(
+        input.provider,
+        model,
+        aiTemperatureFor(input.action),
+      ),
       messages: [
         { role: 'system', content: buildAiInstruction(input.action) },
         { role: 'user', content: buildAiUserMessage(input.action, input.content) },
@@ -434,7 +444,6 @@ async function callAnthropic(
     body: JSON.stringify({
       model,
       max_tokens: 8192,
-      temperature: aiTemperatureFor(input.action),
       system: buildAiInstruction(input.action),
       messages: [
         {
@@ -490,7 +499,9 @@ async function callGeminiNative(
           ],
         },
       ],
-      generationConfig: { temperature: aiTemperatureFor(input.action) },
+      generationConfig: model.startsWith('gemini-2.')
+        ? { temperature: aiTemperatureFor(input.action) }
+        : undefined,
     }),
   });
   const json = await res.json().catch(() => null);
@@ -503,7 +514,9 @@ async function callGeminiNative(
   const parts = json?.candidates?.[0]?.content?.parts;
   const text = Array.isArray(parts)
     ? parts
-        .map((p: { text?: string }) => (typeof p?.text === 'string' ? p.text : ''))
+        .map((p: { text?: string; thought?: boolean }) =>
+          !p?.thought && typeof p?.text === 'string' ? p.text : '',
+        )
         .join('')
     : '';
   if (text.trim().length === 0) {
@@ -525,7 +538,7 @@ async function transformWithAi(input: AiTransformInput): Promise<string> {
     );
   }
   const endpoint = input.endpoint.trim() || defaultAiEndpoint(provider);
-  const model = input.model.trim() || defaultAiModel(provider);
+  const model = resolveAiModel(provider, input.model);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90_000);
   try {
@@ -549,6 +562,8 @@ async function transformWithAi(input: AiTransformInput): Promise<string> {
 function validateAiConnection(input: {
   provider: AiProvider;
   token: string;
+  endpoint: string;
+  model: string;
 }): void {
   if (
     input.provider !== 'general' &&
@@ -562,6 +577,38 @@ function validateAiConnection(input: {
   if (!input.token.trim()) {
     throw new Error('設定でAI接続用Tokenを入力してください');
   }
+  if (input.provider === 'copilot' && (!input.endpoint.trim() || !input.model.trim())) {
+    throw new Error('Copilot の接続先 URL とモデル ID を設定してください');
+  }
+}
+
+async function listCopilotModels(
+  endpoint: string,
+  token: string,
+): Promise<string[]> {
+  const url = new URL(endpoint.trim());
+  if (
+    !['https:', 'http:'].includes(url.protocol) ||
+    url.username || url.password ||
+    !/\/chat\/completions\/?$/.test(url.pathname) ||
+    !token.trim()
+  ) {
+    throw new Error('Copilot に OpenAI 互換の接続先 URL とトークンを設定してください');
+  }
+  url.pathname = url.pathname.replace(/\/chat\/completions\/?$/, '/models');
+  url.hash = '';
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token.trim()}` },
+    redirect: 'error',
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data: unknown = (await response.json())?.data;
+  if (!Array.isArray(data)) throw new Error('モデル一覧の応答形式が不正です');
+  const ids = data.flatMap((item) =>
+    typeof item?.id === 'string' && item.id.trim() ? [item.id.trim()] : [],
+  );
+  return [...new Set(ids)].sort();
 }
 
 function buildChatSystemPrompt(input: AiChatInput): string {
@@ -763,7 +810,7 @@ async function chatWithOpenAiCompatible(
     },
     body: JSON.stringify({
       model,
-      temperature: 0.3,
+      temperature: openAiTemperature(input.provider, model, 0.3),
       stream: true,
       messages: [
         { role: 'system', content: buildChatSystemPrompt(input) },
@@ -826,7 +873,6 @@ async function chatWithAnthropic(
     body: JSON.stringify({
       model,
       max_tokens: 8192,
-      temperature: 0.3,
       stream: true,
       system: buildChatSystemPrompt(input),
       messages: input.messages.map((m, index) => ({
@@ -910,7 +956,7 @@ async function chatWithGemini(
           parts,
         };
       }),
-      generationConfig: { temperature: 0.3 },
+      generationConfig: model.startsWith('gemini-2.') ? { temperature: 0.3 } : undefined,
     }),
   });
   if (!res.ok) {
@@ -931,7 +977,7 @@ async function chatWithGemini(
         const parts = obj?.candidates?.[0]?.content?.parts;
         if (Array.isArray(parts)) {
           for (const p of parts) {
-            if (typeof p?.text === 'string' && p.text.length > 0) {
+            if (!p?.thought && typeof p?.text === 'string' && p.text.length > 0) {
               full += p.text;
               onChunk?.(p.text);
             }
@@ -1115,7 +1161,7 @@ async function chatWithAi(
     throw new Error('送信するメッセージがありません');
   }
   const endpoint = input.endpoint.trim() || defaultAiEndpoint(input.provider);
-  const model = input.model.trim() || defaultAiModel(input.provider);
+  const model = resolveAiModel(input.provider, input.model);
   const controller = new AbortController();
   if (requestId) {
     inflightChatControllers.set(requestId, controller);
@@ -2902,6 +2948,10 @@ export function registerIpc(): void {
       const tags = meta?.tags ?? [];
       return { body, tags };
     },
+  );
+
+  ipcMain.handle('ai:list-copilot-models', (_e, endpoint: string, token: string) =>
+    listCopilotModels(endpoint, token),
   );
 
   ipcMain.handle('ai:transform', async (_e, input: AiTransformInput) => {

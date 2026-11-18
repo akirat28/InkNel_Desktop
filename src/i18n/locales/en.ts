@@ -302,10 +302,17 @@ const en: Locale = {
       endpoint: 'Endpoint',
       endpointPlaceholder: 'https://...',
       endpointDesc:
-        'Leave empty to use the provider default URL. For "General AI" and "Copilot", supply an OpenAI-compatible URL.',
+        'Leave empty to use the provider default URL. Copilot requires an OpenAI-compatible chat API URL.',
       modelSection: 'Model',
       model: 'Model in use',
       modelChatgptDesc: 'Pick a model from the ChatGPT lineup.',
+      modelClaudeDesc: 'Choose a Claude model available through the Anthropic API.',
+      modelGeminiDesc: 'Choose a model available through the Gemini API.',
+      modelCopilotDesc: 'Set an OpenAI-compatible endpoint and token, then load the model list or enter a model ID.',
+      modelRefresh: 'Load models',
+      modelLoading: 'Loading models…',
+      modelPick: 'Choose an endpoint model',
+      modelUnavailable: 'Could not load models. Check the endpoint and token, or enter a model ID.',
       modelDefaultDesc:
         'Leave empty to use the provider default model.',
       modelPlaceholder: 'Model name (empty = provider default)',

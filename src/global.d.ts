@@ -348,6 +348,7 @@ export interface AiChatInput {
 }
 
 export interface AiApi {
+  listCopilotModels(endpoint: string, token: string): Promise<string[]>;
   transform(input: AiTransformInput): Promise<string>;
   /**
    * AI とチャット。`requestId` を渡すと `abort()` で中断できる。

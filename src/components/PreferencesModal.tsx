@@ -8,7 +8,6 @@ import {
   FONT_SIZE_OPTIONS,
   SIDEBAR_ITEM_VISIBILITY_OPTIONS,
   isValidProtectionPassword,
-  type AiProvider,
   type AiProviderSettings,
   type AppSettings,
   type CalendarPluginSettings,
@@ -22,6 +21,7 @@ import {
   type Theme,
 } from '../settings';
 import { SUPPORTED_HIGHLIGHT_LANGS } from '../utils/highlight';
+import { AI_MODEL_OPTIONS, resolveAiModel } from '../utils/aiModels';
 import { LANGUAGE_OPTIONS, useT } from '../i18n';
 import { listPlugins } from '../plugins/registry';
 import {
@@ -31,34 +31,6 @@ import {
   subscribeRuntimePlugins,
 } from '../plugins/runtimeLoader';
 import PinInput from './PinInput';
-
-const CHATGPT_MODEL_OPTIONS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'];
-
-/**
- * Gemini で選択できるモデル一覧。
- * Google AI Studio で公開されている現行モデルのみ（gemini-1.5 系は v1beta の
- * generateContent から外れているため除外）。
- * 既定は gemini-2.0-flash（高速・無料枠で扱いやすい）。
- */
-const GEMINI_MODEL_OPTIONS = [
-  'gemini-2.5-pro',
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite',
-];
-
-/**
- * Claude (Anthropic) で選択できるモデル一覧。
- * 既定は claude-3-5-sonnet-latest（defaultAiModel('claudeCode') と揃える）。
- * 4 系（Opus 4.x / Sonnet 4.x / Haiku 4.x）は精度・速度のバランスで選ぶ。
- */
-const CLAUDECODE_MODEL_OPTIONS = [
-  'claude-opus-4-7',
-  'claude-sonnet-4-6',
-  'claude-haiku-4-5',
-  'claude-3-5-sonnet-latest',
-];
 
 interface Props {
   open: boolean;
@@ -218,6 +190,65 @@ export default function PreferencesModal({
 
 // ----- AI パネル -----
 
+function CopilotModelPicker({
+  settings: { endpoint, token, model },
+  onSelect,
+}: {
+  settings: AiProviderSettings;
+  onSelect: (model: string) => void;
+}) {
+  const t = useT().settings.ai;
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{
+    endpoint: string;
+    token: string;
+    models: string[] | null;
+  }>();
+  const models = result?.endpoint === endpoint && result.token === token
+    ? result.models
+    : undefined;
+
+  const refresh = async () => {
+    setLoading(true);
+    setResult(undefined);
+    try {
+      const ids = await window.api.ai.listCopilotModels(endpoint, token);
+      setResult({ endpoint, token, models: ids });
+    } catch {
+      setResult({ endpoint, token, models: null });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        className="prefs__btn-secondary"
+        disabled={loading || !endpoint.trim() || !token.trim()}
+        onClick={() => void refresh()}
+      >
+        {loading ? t.modelLoading : t.modelRefresh}
+      </button>
+      {models && models.length > 0 && (
+        <select
+          className="ai-panel__row-select"
+          aria-label={t.modelPick}
+          value={models.includes(model) ? model : ''}
+          onChange={(e) => onSelect(e.target.value)}
+        >
+          <option value="" disabled>{t.modelPick}</option>
+          {models.map((id) => <option key={id} value={id}>{id}</option>)}
+        </select>
+      )}
+      {(models === null || models?.length === 0) && (
+        <p className="ai-panel__row-desc" role="status">{t.modelUnavailable}</p>
+      )}
+    </>
+  );
+}
+
 function AiPanel({ settings, onChange }: PanelProps) {
   const t = useT();
   // タブ式: aiProvider が「現在編集中 = 有効化されているプロバイダ」
@@ -225,9 +256,12 @@ function AiPanel({ settings, onChange }: PanelProps) {
   const isChatGpt = settings.aiProvider === 'chatgpt';
   const isGemini = settings.aiProvider === 'gemini';
   const isClaudeCode = settings.aiProvider === 'claudeCode';
+  const isCopilot = settings.aiProvider === 'copilot';
   const [showToken, setShowToken] = useState(false);
   const current: AiProviderSettings =
     settings.aiProviderSettings[settings.aiProvider];
+  const model = resolveAiModel(settings.aiProvider, current.model);
+  const modelOptions = AI_MODEL_OPTIONS[settings.aiProvider];
 
   /** 現在編集中プロバイダの 1 フィールドを更新 */
   const updateField = (field: keyof AiProviderSettings, value: string) => {
@@ -240,75 +274,21 @@ function AiPanel({ settings, onChange }: PanelProps) {
     });
   };
 
-  const handleProviderChange = (provider: AiProvider) => {
-    onChange('aiProvider', provider);
-    // ChatGPT に切替時、その枠の model が許可リスト外なら既定値へ
-    if (provider === 'chatgpt') {
-      const m = settings.aiProviderSettings.chatgpt.model;
-      if (!CHATGPT_MODEL_OPTIONS.includes(m)) {
-        onChange('aiProviderSettings', {
-          ...settings.aiProviderSettings,
-          chatgpt: {
-            ...settings.aiProviderSettings.chatgpt,
-            model: CHATGPT_MODEL_OPTIONS[0],
-          },
-        });
-      }
-    }
-    // ClaudeCode に切替時、許可リスト外なら既定（claude-3-5-sonnet-latest）へ
-    if (provider === 'claudeCode') {
-      const m = settings.aiProviderSettings.claudeCode.model;
-      if (m.trim() !== '' && !CLAUDECODE_MODEL_OPTIONS.includes(m)) {
-        onChange('aiProviderSettings', {
-          ...settings.aiProviderSettings,
-          claudeCode: {
-            ...settings.aiProviderSettings.claudeCode,
-            model: 'claude-3-5-sonnet-latest',
-          },
-        });
-      }
-    }
-    // Gemini に切替時も同様に、許可リスト外なら既定（gemini-2.0-flash）へ
-    if (provider === 'gemini') {
-      const g = settings.aiProviderSettings.gemini;
-      const needModelReset = !GEMINI_MODEL_OPTIONS.includes(g.model);
-      // 旧バージョンで OpenAI 互換 URL を保存していると 404 になるためクリア
-      const needEndpointReset =
-        g.endpoint.includes('/openai/chat/completions') ||
-        g.endpoint.includes('/v1/chat/completions');
-      if (needModelReset || needEndpointReset) {
-        onChange('aiProviderSettings', {
-          ...settings.aiProviderSettings,
-          gemini: {
-            ...g,
-            model: needModelReset ? 'gemini-2.0-flash' : g.model,
-            endpoint: needEndpointReset ? '' : g.endpoint,
-          },
-        });
-      }
-    }
-  };
-
   const tokenIsSet = current.token.trim().length > 0;
 
-  // Gemini 選択中で保存モデルがリスト外（例: 廃止された gemini-1.5-flash）の場合は
-  // パネルを開いた時点で gemini-2.0-flash に移行する。
-  // 同様に旧 OpenAI 互換 URL が残っていたらクリア。
+  // 旧 Gemini 設定の OpenAI 互換 URL をネイティブ API の既定に戻す。
   useEffect(() => {
     if (settings.aiProvider !== 'gemini') return;
     const g = settings.aiProviderSettings.gemini;
-    const modelInvalid =
-      g.model.trim() !== '' && !GEMINI_MODEL_OPTIONS.includes(g.model);
     const endpointStale =
       g.endpoint.includes('/openai/chat/completions') ||
       g.endpoint.includes('/v1/chat/completions');
-    if (!modelInvalid && !endpointStale) return;
+    if (!endpointStale) return;
     onChange('aiProviderSettings', {
       ...settings.aiProviderSettings,
       gemini: {
         ...g,
-        model: modelInvalid ? 'gemini-2.0-flash' : g.model,
-        endpoint: endpointStale ? '' : g.endpoint,
+        endpoint: '',
       },
     });
     // 一度だけ実行すればよいので、依存は意図的に空に近い形にせず、
@@ -494,7 +474,7 @@ function AiPanel({ settings, onChange }: PanelProps) {
                 role="tab"
                 aria-selected={isActive}
                 className={`ai-card__tab ${isActive ? 'is-active' : ''}`}
-                onClick={() => handleProviderChange(o.value)}
+                onClick={() => onChange('aiProvider', o.value)}
                 title={
                   hasToken && !isActive
                     ? `${o.label} (${t.settings.ai.tokenSet})`
@@ -667,56 +647,22 @@ function AiPanel({ settings, onChange }: PanelProps) {
             </span>
             {t.settings.ai.model}
           </div>
-          {isChatGpt ? (
+          {modelOptions ? (
             <select
               id="prefs-ai-model"
               className="ai-panel__row-select"
-              value={
-                CHATGPT_MODEL_OPTIONS.includes(current.model)
-                  ? current.model
-                  : CHATGPT_MODEL_OPTIONS[0]
-              }
+              aria-label={t.settings.ai.model}
+              value={model}
               onChange={(e) => updateField('model', e.target.value)}
             >
-              {CHATGPT_MODEL_OPTIONS.map((model) => (
+              {modelOptions.map((model) => (
                 <option key={model} value={model}>
                   {model}
                 </option>
               ))}
-            </select>
-          ) : isGemini ? (
-            <select
-              id="prefs-ai-model"
-              className="ai-panel__row-select"
-              value={
-                GEMINI_MODEL_OPTIONS.includes(current.model)
-                  ? current.model
-                  : 'gemini-2.0-flash'
-              }
-              onChange={(e) => updateField('model', e.target.value)}
-            >
-              {GEMINI_MODEL_OPTIONS.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
-          ) : isClaudeCode ? (
-            <select
-              id="prefs-ai-model"
-              className="ai-panel__row-select"
-              value={
-                CLAUDECODE_MODEL_OPTIONS.includes(current.model)
-                  ? current.model
-                  : 'claude-3-5-sonnet-latest'
-              }
-              onChange={(e) => updateField('model', e.target.value)}
-            >
-              {CLAUDECODE_MODEL_OPTIONS.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
+              {!modelOptions.includes(model) && (
+                <option value={model}>{model}</option>
+              )}
             </select>
           ) : (
             <input
@@ -728,14 +674,19 @@ function AiPanel({ settings, onChange }: PanelProps) {
               onChange={(e) => updateField('model', e.target.value)}
             />
           )}
+          {isCopilot && (
+            <CopilotModelPicker settings={current} onSelect={(id) => updateField('model', id)} />
+          )}
           <p className="ai-panel__row-desc">
             {isChatGpt
               ? t.settings.ai.modelChatgptDesc
               : isGemini
-                ? 'Gemini 用のモデルから選択します。Pro は精度重視、Flash は速度・無料枠重視。'
+                ? t.settings.ai.modelGeminiDesc
                 : isClaudeCode
-                  ? 'Claude 用のモデルから選択します。Opus は最高精度、Sonnet は標準、Haiku は速度・低コスト重視。'
-                  : t.settings.ai.modelDefaultDesc}
+                  ? t.settings.ai.modelClaudeDesc
+                  : isCopilot
+                    ? t.settings.ai.modelCopilotDesc
+                    : t.settings.ai.modelDefaultDesc}
           </p>
         </div>
       </div>
